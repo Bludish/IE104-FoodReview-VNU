@@ -1,0 +1,843 @@
+Chapter 7. Why Machine Learning Systems Fail
+in Production
+A NOTE FOR EARLY RELEASE READERS
+With Early Release ebooks, you get books in their earliest form—the author’s raw and unedited content as they
+write—so you can take advantage of these technologies long before the official release of these titles.
+This will be the 7th chapter of the final book. Please note that the GitHub repo will be made active later on.
+If you have comments about how we might improve the content and/or examples in this book, or if you notice
+missing material within this chapter, please reach out to the author at chip@huyenchip.com.
+Let’s start the chapter with a story I was told by an executive that many readers might be able to relate to. About
+two years ago, his company hired a consulting firm to develop an ML model to help them predict how many of
+each grocery item they’d need next week, so they could restock the items accordingly. The consulting firm took six
+months to develop the model. When the consulting firm handed the model over, his company deployed it and was
+very happy with its performance. They could finally boast to their investors that they were an AI-powered
+company.
+However, a year later, their numbers went down. The demand for some items was consistently being
+overestimated, which caused the extra items to expire. At the same time, the demand for some items was
+consistently being underestimated, leading to lost sales. Initially, his inventory team manually changed the model’s
+predictions to correct the patterns they noticed, but eventually, the model’s predictions had become so bad that they
+could no longer use it. They had three options: pay the same consulting firm an obscene amount of money to
+update the model, pay another consulting firm even more money because this firm would need time to get up to
+speed, or hire an in-house team to maintain the model onwards.
+His company learned the hard way an important lesson that the rest of the industry is also discovering: deploying a
+model isn’t the end of the process. A model’s performance degrades over time in production. Once a model has
+been deployed, we still have to continually monitor its performance to detect issues as well as deploy updates to
+fix these issues.
+In this chapter and the next, we’ll cover the necessary topics to help you keep a model in production after it’s been
+deployed. We’ll start by covering reasons why ML models that perform great during development fail in
+production. Then, we’ll deepdive into one especially prevalent and thorny issue that affects almost all ML models
+in production: data distribution shifts. This occurs when the data distribution in production differs and diverges
+from the data distribution the model was exposed to during training. In Chapter 8, we’ll continue the discussion,
+covering monitoring for distribution shifts and how to continually update your models in production to adapt to
+shifts in data distributions. Because this chapter contains definitions of different types of distribution shifts, it’s
+more theoretical than the rest of the book.
+Before we dive into this chapter, however, I want to emphasize that detecting data distribution shifts, monitoring
+model performance, updating models, and evaluating them in production are all so much easier if your tasks have
+natural ground truth labels. We’ll start by discussing what natural ground truth labels mean. When discussing many
+topics throughout this chapter and the next, two of the first things we should consider are whether a task has
+natural ground truth labels and when these natural labels will become available.
+Natural Labels and Feedback Loop
+Tasks with natural ground truth labels are tasks where the model’s predictions can be automatically evaluated or
+partially evaluated by the system. An example is the model that estimates time of arrival on Google Maps. By the
+end of a trip, Google Maps knows how long the trip actually took, and thus can evaluate the accuracy of the
+predicted time of arrival.
+Natural labels are ideal for evaluating a model’s performance. However, even if your task doesn’t inherently have
+natural labels, it’s possible to set up your system in a way that allows you to collect some feedback on your model.
+For example, if you’re building a translation system like Google Translate, you can have the option for the
+community to submit alternative translations for bad translations. Newsfeed ranking is not a task with inherent
+labels, but by adding the like button and other reactions to each newsfeed item, Facebook is able to collect
+feedback on their ranking algorithm.
+For tasks with natural ground truth labels, the time it takes from when a prediction is served until when the
+feedback on it is provided is the feedback loop length.
+Tasks with short feedback loops are tasks where ground truth labels are generally available within minutes. The
+canonical example of this type of task is recommender systems. The goal of a recommender system is to
+recommend users items they would like. Whether a user clicks on the recommended item or not can be seen as the
+feedback for that recommendation. A recommendation that gets clicked on can be presumed to be a good
+recommendation (i.e. the label is POSITIVE) and a recommendation that doesn’t get clicked on can be presumed
+to be bad (i.e. the label is NEGATIVE). Many tasks can be framed as recommendation tasks. For example, you can
+frame the task of predicting ads’ click-through rates as recommending the most relevant ads to users based on their
+activity histories and profiles.
+However, not all recommender systems have short feedback loops. Depending on the nature of the item to be
+recommended, the delay until labels can be seconds to hours, and in some extreme cases, days or weeks. If the
+recommended items are subreddits to subscribe to on Reddit, people to follow on Twitter, videos to watch next on
+Tiktok, etc., the time between when the item is recommended until it’s clicked on, if it’s clicked on at all, is
+seconds. If you work with longer content types like blog posts or articles or YouTube videos, it can be minutes,
+even hours. However, if you build a system to recommend clothes for users like the one Stitch Fix has, you
+wouldn’t get feedback until users have received the items and tried them on, which could be weeks later.
+Unless next to each recommended item, there’s a prompt that says: “Do you like this recommendation? Yes / No”,
+recommender systems don’t have explicit negative labels. Even if you add that prompt, there’s no guarantee that
+users will respond to it. Typically, a recommendation is presumed to be bad if there’s a lack of positive feedback.
+After a certain time window, if there is no click, the label is presumed to be negative. Choosing the right window
+length requires thorough consideration, as it involves the speed and accuracy tradeoff. A short window length
+means that you can capture labels faster, which allows you to use these labels for monitoring and continual
+learning. These two topics will be discussed in the next chapter. However, a short window length also means that
+you might prematurely label an item as no click before it’s being clicked on.
+No matter how long you set your window length to be, there might still be premature negative labels. In early
+2021, a study by the Ads team at Twitter found that even though the majority of clicks on ads happen within the
+first 5 minutes, some clicks happen hours after when the ad is shown. This means that this type of label tends to
+give an underestimate of the actual click-through rate. If you only record 1000 clicks, the actual number of clicks
+might be a bit over 1000 clicks.
+For tasks with long feedback loops, natural labels might not arrive for weeks or even months. Fraud detection is an
+example of a task with long feedback loops. For a certain period of time after a transaction, users can dispute
+whether that transaction is fraudulent or not. For example, when a customer read their credit card’s statement and
+saw a transaction they didn’t recognize, they might dispute with their bank, giving the bank the feedback to label
+that transaction as fraudulent. A typical dispute window is a month to three months. After the dispute window has
+passed, if there’s no dispute from the user, you can presume the transaction to be legitimate.
+Labels with long feedback loops are helpful for reporting a model’s performance on quarterly or yearly business
+reports. However, they are not very helpful if you want to detect issues with your models as soon as possible. If
+there’s a problem with your fraud detection model and it takes you months to catch, by the time the problem is
+fixed, all the fraudulent transactions your faulty model let through might have caused a small business to go
+bankrupt.
+Causes of ML System Failures
+Before we identify the cause of ML system failures, let’s briefly discuss what an ML system failure is. A failure
+happens when one or more expectations of the system is violated. In traditional software, we mostly care about a
+system’s operational expectations: whether the system executes its logics within the expected operational metrics
+such as the expected latency and throughput.
+For an ML system, we care about both its operational metrics and its ML performance metrics. For example,
+consider an English-French machine translation system. Its operational expectation might be that given an English
+sentence, the system returns a French translation within a second latency. Its ML performance expectation is that
+the returned translation is an accurate translation of the original English sentence 99% of the time.
+If you enter an English sentence into the system and don’t get back a translation, the first expectation is violated,
+so this is a system failure.
+If you get back a translation that isn’t correct, it’s not necessarily a system failure because the accuracy expectation
+allows some margin of error. However, if you keep entering different English sentences into the system and keep
+getting back wrong translations, the second expectation is violated, which makes it a system failure.
+Operational expectation violations are easier to detect, as they’re usually accompanied by an operational breakage
+such as a timeout, a 404 error on a webpage, an out of memory error, a segmentation fault, etc. However, ML
+performance expectation violations are harder to detect as it requires measuring and monitoring the performance of
+ML models in production. In the example of the English-French machine translation system above, detecting
+whether the returned translations are correct 99% of the time is difficult if we don’t know what the correct
+translations are supposed to be. There are countless examples of Google Translate’s painfully wrong translations
+being used by users because they aren’t aware that these are wrong translations. For this reason, we say that ML
+systems often fail silently.
+To effectively detect and fix ML system failures in production, it’s useful to understand why a model, after proving
+to work well during development, would fail in production. We’ll examine two types of failures: Software system
+failures and ML-specific failures. Software system failures are failures that would have happened to non-ML
+systems. Here are some examples of software system failures.
+Dependency failure: a software package or a codebase that your system depends on breaks, which leads
+your system to break. This failure mode is common when the dependency is maintained by a third party,
+and especially common if the third-party that maintains the dependency no longer exists .
+Deployment failure: failures caused by deployment errors, such as when you accidentally deploy the
+binaries of an older version of your model instead of the current version, or when your systems don’t have
+the right permissions to read or write certain files.
+Hardware failures: when the hardware that you use to deploy your model, such as CPUs or GPUs,
+doesn’t behave the way it should. For example, the CPUs you use might overheat and break down .
+Downtime or crashing: if a component of your system runs from a server somewhere, such as AWS or a
+hosted service, and that server is down, your system will also be down.
+Just because some failures are not specific to ML doesn’t mean it’s not important for ML engineers to understand.
+In 2020, Daniel Papasian and Todd Underwood, two ML engineers at Google, looked at 96 cases where a large
+ML pipeline at Google broke. They reviewed data from over the previous 15 years to determine the causes and
+found out that 60 out of these 96 failures happened due to causes not directly related to ML . Most of the issues
+are related to distributed systems e.g. where the workflow scheduler or orchestrator makes a mistake, or related to
+1
+2
+3
+the data pipeline e.g. where data from multiple sources is joined incorrectly or the wrong data structures are being
+used.
+Addressing software system failures requires not ML skills, but traditional software engineering skills, and
+addressing them is beyond the scope of this book. Because of the importance of traditional software engineering
+skills in deploying ML systems, the majority of ML engineering is engineering, not ML . For readers interested in
+learning how to make ML systems reliable from the software engineering perspective, I highly recommend the
+book Reliable Machine Learning, also published by O’Reilly with Todd Underwood as one of the authors.
+A reason for the prevalence of software system failures is that because ML adoption in the industry is still nascent,
+tooling around ML production is limited and best practices are not yet well developed or standardized. However,
+as toolings and best practices for ML production mature, there are reasons to believe that the proportion of
+software system failures will decrease and the proportion of ML-specific failures will increase.
+ML-specific failures are failures specific to ML systems. Examples include data collection and processing
+problems, poor hyperparameters, changes in the training pipeline not correctly replicated in the inference pipeline
+and vice versa, data distribution shifts that cause a model’s performance to deteriorate over time, edge cases, and
+degenerate feedback loop.
+In this chapter, we’ll focus on addressing ML-specific failures. Even though they account for a small portion of
+failures, they can be more dangerous than non-ML failures as they’re hard to detect and fix, and can prevent ML
+systems from being used altogether. We’ve covered data problems in great detail in Chapter 4: Training Data,
+hyperparameter tuning in Chapter 5: Model Development, and the danger of having two separate pipelines for
+training and inference in Chapter 6: Deployment. In this chapter, we’ll discuss three new but very common
+problems that arise after a model has been deployed: changing data distribution, edge cases, and degenerate
+feedback loops.
+Production Data Differing From Training Data
+When we say that an ML model learns from the training data, it means that the model learns the underlying
+distribution of the training data with the goal of leveraging this learned distribution to generate accurate
+predictions for unseen data — data that it didn’t see during training. We’ll go into what this means mathematically
+in the Data Distribution Shifts section below. When the model is able to generate accurate predictions for unseen
+data, we say that this model “generalizes to unseen data. ” The test data that we use to evaluate a model during
+development is supposed to represent unseen data, and the model’s performance on the test data is supposed to
+give us an idea of how well the model will generalize.
+One of the first things I learned in ML courses is that it’s essential for the training data and the unseen data to come
+from the same distribution. The assumption is that the unseen data comes from a stationary distribution that is the
+same as the training data distribution. If the unseen data comes from a different distribution, the model might not
+generalize well .
+This assumption is incorrect in most cases for two reasons. First, the underlying distribution of the real-world data
+is unlikely to be the same as the underlying distribution of the training data. Curating a training dataset that can
+accurately represent the data that a model will encounter in production turns out to be very difficult . Real-world
+data is multi-faceted, and in many cases, virtually infinite, whereas training data is finite and constrained by the
+time, compute, and human resources available during the dataset creation and processing. There are many different
+selection and sampling biases, as discussed in Chapter 3, that can happen and make real-world data diverge from
+training data. The divergence can be something as minor as real-world data using a different type of encoding of
+emojis. This type of divergence leads to a common failure mode known as the train-serving skew: a model that
+does great in development but performs poorly when deployed.
+Second, the real world isn’t stationary. Things change. Data distributions shift. In 2019, when people searched for
+Wuhan, they likely wanted to get travel information, but since COVID-19, when people search for Wuhan, they
+likely want to know about the place where COVID-19 originated. Another common failure mode is that a model
+4
+5
+6
+7
+does great when first deployed, but its performance degrades over time as the data distribution changes. This
+failure mode needs to be continually monitored and detected for as long as a model remains in production.
+When I use COVID-19 as an example that causes data shifts, some people have the impression that data shifts only
+happen because of unusual events, which implies they don’t happen often. Data shifts happen all the time,
+suddenly, gradually, or seasonally. They can happen suddenly because of a specific event, such as when your
+existing competitors change their pricing policies and you have to update your price predictions in response, or
+when you launch your product in a new region, or when a celebrity mentions your product which causes a surge in
+new users, and so on. They can happen gradually because social norms, cultures, languages, trends, industries, and
+more just change over time. They can also happen due to seasonal variations, such as people might be more likely
+to request rideshares in the winter when it’s cold and snowy than in the spring.
+When talking about data shifts, many people imagine that they are due to external changes, such as natural
+disasters, holiday seasons, or user behaviors. But in reality, due to the complexity of ML systems and the poor
+practices in deploying them, a large percentage of what might look like data shifts on monitoring dashboards are
+caused by internal errors , such as bugs in the data pipeline, missing values incorrectly filled in, inconsistencies
+between the features extracted during training and inference, features standardized using statistics from the wrong
+subset of data, wrong model version, or bugs in the app interface that forces users to change their behaviors.
+Since this is an error mode that affects almost all ML models, we’ll cover this in detail in the section Data
+Distribution Shifts.
+Edge Cases
+Imagine there existed a self-driving car that can drive you safely 99.9% of the time, but the other 0.1% of the time,
+it might get into a catastrophic accident that can leave you permanently injured or even dead . Would you use that
+car?
+If you’re tempted to say no, you’re not alone. An ML model that performs well on most cases but fails on a small
+number of cases might not be usable if these failures cause catastrophic consequences. For this reason, major self-
+driving car companies are focusing on making their systems work on edge cases .
+Edge cases are the data samples so extreme that they cause the model to make catastrophic mistakes. Even though
+edge cases generally refer to data samples drawn from the same distribution, if there is a sudden increase in the
+number of data samples in which your model doesn’t perform well on, it could be an indication that the underlying
+data distribution has shifted.
+Autonomous vehicles are often used to illustrate how edge cases can prevent an ML system from being deployed.
+But this is also true for any safety-critical application such as medical diagnosis, traffic control, eDiscovery , etc.
+It can also be true for non-safety-critical applications. Imagine a customer service chatbot that gives reasonable
+responses to most of the requests, but sometimes, it spits out outrageously racist or sexist content. This chatbot will
+be a brand risk for any company that wants to use it, thus rendering it unusable.
+8
+9
+101112
+13
+EDGE CASES AND OUTLIERS
+You might wonder about the differences between an outlier and an edge case. The definition of what makes an
+edge case varies by discipline. In ML, because of its recent adoption in production, edge cases are still being
+discovered, which makes their definition contentious.
+In this book, outliers refer to data: an example that differs significantly from other examples. Edge cases refer
+to performance: an example where a model performs significantly worse than other examples. An outlier can
+cause a model to perform unusually poorly, which makes it an edge case. However, not all outliers are edge
+cases. For example, a person jay-walking on a highway is an outlier, but it’s not an edge case if your self-
+driving car can accurately detect that person and decide on a motion response appropriately.
+During model development, outliers can negatively affect your model’s performance, as shown in Figure 7-1.
+In many cases, it might be beneficial to remove outliers as it helps your model to learn better decision
+boundaries and generalize better to unseen data. However, during inference, you don’t usually have the option
+to remove or ignore the queries that differ significantly from other queries. You can choose to transform it —
+for example, when you enter “mechin learnin” into Google search, Google might ask if you mean “machine
+learning”. But most likely, you’ll want to develop a model so that it can perform well even on unexpected
+inputs.
+Figure 7-1. The image on the left shows the decision boundary when there’ s no outlier. The image on the right shows the decision boundary when
+there’ s one outlier, which is very different from the decision boundary in the first case, and probably less accurate.
+Degenerate Feedback Loop
+In the Natural Labels and Feedback Loop section earlier in this chapter, we discussed a feedback loop as the time it
+took from when a prediction is shown until the time feedback on the prediction is provided. The feedback can be
+used to extract natural labels to evaluate the model’s performance.
+A degenerate feedback loop can happen when the predictions themselves influence the feedback, which is then
+used to train the next iteration of the model. More formally, a degenerate feedback loop is created when a system’s
+outputs are used to create or process the same system’s inputs, which, in turn, influence the system’s future
+outputs. In ML, a system’s predictions can influence how users interact with the system, and because users’
+interactions with the system are sometimes used as the inputs to the same system, degenerate feedback loops can
+occur and cause unintended consequences. Degenerate feedback loops are especially common in tasks with natural
+labels from users, such as recommender systems and ads click-through-rate prediction.
+To make this concrete, imagine you build a system to recommend to users songs that they might like. The songs
+that are ranked high by the system are shown first to users. Because they are shown first, users click on them more,
+which makes the system more confident that these recommendations are good. In the beginning, the rankings of
+two songs A and B might be only marginally different, but because A was originally ranked a bit higher, A got
+clicked on more, which made the system rank A even higher. After a while, A’s ranking became much higher than
+B . Degenerate feedback loops are one reason why popular movies, books, or songs keep getting more popular,
+which makes it hard for new items to break into popular lists. This type of scenario is incredibly common in
+production and it’s heavily researched. It goes by many different names, including “exposure bias”, “popularity
+bias”, “filter bubbles,” and sometimes “echo chambers.”
+Here’s another example to drive the idea of degenerative feedback loops home. Imagine building a resume-
+screening model to predict whether someone with a certain resume is qualified for the job. The model finds feature
+X accurately predicts whether someone is qualified, so it recommends resumes with feature X. You can replace X
+with features like “went to Stanford”, “worked at Google”, or “identifies as male”. Recruiters only interview
+people whose resumes are recommended by the model, which means they only interview candidates with feature
+X, which means the company only hires candidates with feature X. This, in turn, makes the model put even more
+weight on feature X . Having visibility into how your model makes predictions — such as, measuring the
+importance of each feature for the model as discussed in Chapter 4 — can help detect the bias towards feature X in
+this case.
+Left unattended, degenerate feedback loops can cause your model to perform suboptimally at best. At worst, it can
+perpetuate and magnify biases embedded in data, such as biasing against candidates without feature X above.
+Detecting generative feedback loops
+If degenerate feedback loops are so bad, how do we know if a feedback loop in a system is degenerate? When a
+system is offline, degenerate feedback loops are difficult to detect. Degenerate loops result from user feedback,
+and a system won’t have users until it’s online (e.g. deployed to users).
+For the task of recommendation systems, it’s possible to detect degenerate feedback loops by measuring the
+popularity diversity of a system’s outputs even when the system is offline. An item’s popularity can be measured
+based on how many times it has been interacted with (e.g. seen, liked, bought, etc.) in the past. The popularity of
+all the items will likely follow a long tail distribution: a small number of items are interacted with a lot while most
+items are rarely interacted with at all. Various metrics such as aggregate diversity and average coverage of long
+tail items proposed by Brynjolfsson et al. (2011), Fleder et al. (2009), and Abdollahpouri et al. (2019) can help you
+measure the diversity, in terms of diversity, of the outputs of a recommendation system. Low scores mean that the
+outputs of your system are homogeneous, which might be caused by popularity bias.
+In 2021, Chia et al. went a step further and proposed the measurement of hit rate against popularity. They first
+divided items into buckets based on their popularity — e.g. bucket 1 consists of items that have been interacted
+with less than 100 times, bucket 2 consists of items that have been interacted with more than 100 times but less
+than 1000 times, etc. Then they measured the prediction accuracy of a recommender system for each of these
+buckets. If a recommender system is much better at recommending popular items than recommending less popular
+items, it likely suffers from popularity bias . Once your system is in production and you notice that its predictions
+become more homogeneous over time, it likely suffers from degenerative feedback loops.
+Correcting for degenerative feedback loops
+Because degenerative feedback loops are a common problem, there are many proposed methods on how to correct
+them. In this chapter, we’ll discuss two methods. The first one is to use randomization, and the second one is to use
+positional features.
+We’ve discussed that degenerative feedback loops can cause a system’s outputs to be more homogeneous over
+time. Introducing randomization in the predictions can reduce their homogeneity. In the case of recommender
+systems, instead of showing the users only the items that the system ranks highly for them, we show users random
+items and use their feedback to determine the true quality of these items. This is the approach that TikTok follows.
+14
+15
+16
+Each new video is randomly assigned an initial pool of traffic (which can be up to hundreds of impressions). This
+pool of traffic is used to evaluate each video’s unbiased quality to determine whether it should be moved to a
+bigger pool of traffic or to be marked as irrelevant .
+Randomization has been shown to improve diversity but at the cost of user experience . Showing our users
+completely random items might cause users to lose interest in our product. An intelligent exploration strategy, such
+as those discussed in the Contextual Bandits section in Chapter 8, can help increase item diversity with acceptable
+prediction accuracy loss. Schnabel et al. uses a small amount of randomization and causal inference techniques to
+estimate the unbiased value of each song. They were able to show that this algorithm was able to correct a
+recommendation system to make recommendations fair to creators.
+We’ve also discussed that degenerative feedback loops are caused by users’ feedback on predictions, and users’
+feedback on a prediction is biased based on where it is shown. Consider the recommender system example above
+where each time you recommend 5 songs to users. You realize that the top recommended song is much more likely
+to be clicked on compared to the other 4 songs. You are unsure whether your model is exceptionally good at
+picking the top song, or whether users click on any song as long as it’s recommended on top.
+If the position in which a prediction is shown affects its feedback in any way, you might want to encode the
+position information using positional features. Positional features can be numerical (e.g. positions are 1, 2, 3,..) or
+boolean (e.g. whether a prediction is shown in the first position or not). Note that “positional features” are different
+from “positional embeddings” mentioned in Chapter 4.
+Here is a naive example to show how to use positional features. During training, you add “whether a song is
+recommended first” as a feature to your training data, as shown in Table 7-1. This feature allows your model to
+learn how much being a top recommendation influences how likely a song is clicked on.
+17
+18
+ 
+              
+T
+a
+b
+l
+e
+ 
+7
+-
+1
+. 
+A
+d
+d
+i
+n
+g
+ 
+p
+o
+s
+i
+t
+i
+o
+n
+a
+l 
+f
+e
+a
+t
+u
+r
+e
+s
+ 
+t
+o
+ 
+y
+o
+u
+r
+ 
+t
+r
+a
+i
+n
+i
+n
+g
+ 
+d
+a
+t
+a
+ 
+t
+o
+ 
+m
+i
+t
+i
+g
+a
+t
+e
+ 
+d
+e
+g
+e
+n
+e
+r
+a
+t
+e
+ 
+f
+e
+e
+d
+b
+a
+c
+k
+ 
+l
+o
+o
+p
+ 
+              
+ID Song Genre Year Artist User 1st Position Clic
+ 
+              
+1 Shallow Pop 2020 Lady Gaga listenr32 False No
+ 
+              
+2 Good Vibe Funk 2019 Funk Overlord listenr32 False No
+ 
+              
+3 Beat It Rock 1989 Michael Jackson fancypants False No
+ 
+              
+4 In Bloom Rock 1991 Nirvana fancypants True Yes
+ 
+              
+5 Shallow Pop 2020 Lady Gaga listenr32 True Yes
+ 
+            
+During inference, you want to predict whether a user will click on a song regardless of where the song is
+recommended, so you might want to set the 1st Position feature to be False. Then you look at the model’s
+predictions for various songs for each user and can choose the order in which to show each song.
+This is a naive example because doing this alone might not be enough to combat degenerative feedback loops. A
+more sophisticated approach would be to use two different models. The first model predicts the probability that the
+user will see and consider a recommendation taking into account the position of that recommendation. The second
+model then predicts the probability that the user will click on the item given that they saw and considered it. The
+second model doesn’t concern positions at all.
+Data Distribution Shifts
+In the previous section, we’ve discussed common causes for ML system failures. In this section, we’ll zero in onto
+one especially sticky cause of failures: data distribution shifts, or data shifts for short. Data distribution shift refers
+to the phenomenon in supervised learning when the data a model works with changes over time, which causes this
+model’s predictions to become less accurate as time passes. The distribution of the data the model is trained on is
+called the source distribution. The distribution of the data the model runs inference on is called the target
+distribution.
+Even though discussions around data distribution shift have only become common in recent years with the
+growing adoption of ML in the industry, data distribution shift in systems that learned from data has been studied
+as early as in 1986 . There’s also a book on dataset distribution shifts  by Quiñonero-Candela et al. published by
+MIT Press in 2008.
+Types of Data Distribution Shifts
+While data distribution shift is often used interchangeably with concept drift and covariate shift and occasionally
+label shift, these are three distinct subtypes of data shift. To understand what they mean, we first need to define a
+couple of mathematical notations.
+Let’s call the inputs to a model X and its outputs Y . We know that in supervised learning, the training data can be
+viewed as a set of samples from the joint distribution P(X, Y) and then ML usually models P(Y|X). This joint
+distribution P(X, Y) can be decomposed in two ways:
+1. P(X, Y) = P(Y|X)P(X)
+2. P(X, Y) = P(X|Y)P(Y)
+P(Y|X) denotes the conditional probability of an output given an input — for example, the probability of an email
+being spam given the content of the email. P(X) denotes the probability density of the input. P(Y) denotes the
+probability density of the output. Label shift, covariate shift, and concept drift are defined as follows.
+19
+Covariate shift is when P(X) changes, but P(Y|X) remains the same. This refers to the first
+decomposition of the joint distribution.
+Label shift is when P(Y) changes, but P(X|Y) remains the same. This refers to the second decomposition
+of the joint distribution.
+Concept drift is when P(Y|X) changes, but P(X) remains the same. This refers to the first decomposition
+of the joint distribution .
+If you find this confusing, don’t panic. We’ll go over examples in the following section to illustrate their
+differences.
+Covariate Shift
+Covariate shift is one of the most widely studied forms of data distribution shift . In statistics, a covariate is an
+independent variable that can influence the outcome of a given statistical trial, but which is not of direct interest.
+Consider that you are running an experiment to determine how locations affect the housing prices. The housing
+price variable is your direct interest, but you know the square footage affects the price, so the square footage is a
+covariate. In supervised ML, the label is the variable of direct interest, and the input features are covariate
+variables.
+Mathematically, covariate shift is when P(X) changes, but P(Y|X) remains the same, which means that the
+distribution of the input changes, but the conditional probability of a label given an input remains the same.
+To make this concrete, consider the task of detecting breast cancer. You know that the risk of breast cancer is
+higher for women over the age of 40 , so you have a variable “age” as your input. You might have more women
+over the age of 40 in your training data than in your inference data, so the input distributions differ for your
+training and inference data. However, for an example with a given age, such as above 40, the probability that this
+example has breast cancer is constant. So P(Y|X), the probability of having breast cancer given age over 40, is the
+same.
+During model development, covariate shifts can happen because of biases during the data selection process, which
+could result from the difficulty in collecting examples for certain classes. For example, suppose that to study breast
+cancer, you get data from a clinic where women go in to test for breast cancer. Because people over 40 are
+encouraged by their doctors to get checkups, your data is dominated by women over 40. For this reason, covariate
+shift is closely related to the sample selection bias problem .
+Covariate shifts can also happen because the training data is artificially altered to make it easier for your model to
+learn. As discussed in chapter 3, it’s hard for ML models to learn from imbalanced datasets, so you might want to
+collect more samples of the rare classes or oversample your data on the rare classes to make it easier for your
+model to learn the rare classes.
+Covariate shift can also be caused by the model’s learning process, especially through active learning. In chapter 3,
+we defined active learning as follows: instead of randomly selecting samples to train a model on, we use samples
+most helpful to that model according to some heuristics. This means that the training input distribution is altered
+by the learning process to differ from the real-world input distribution, and covariate shifts are a by-product .
+In production, covariate shift usually happens because of major changes in the environment or in the way your
+application is used. Imagine you have a model to predict how likely a free user will convert to a paid user. The
+income level of the user is a feature. Your company’s marketing department recently launched a campaign that
+attracts users from a demographic more affluent than your current demographic. The input distribution into your
+model has changed, but the probability that a user with a given income level will convert remains the same.
+Or consider you want to build a model to detect whether someone has COVID-19 from the sound of their coughs.
+To train your model, you use recordings collected from the hospitals. These recordings were recorded in quiet
+rooms with consistent starting times. However, when you deploy the model as a mobile application where users
+can cough directly into their phone microphones, the recordings will be very different — they might start several
+20
+21
+22
+23
+24
+seconds before a cough or they might not start until the middle of coughing. They might also contain a wide
+variety of background noise. Your model’s performance on phone recordings won’t be very good.
+If you know in advance how the real-world input distribution will differ from your training input distribution, you
+can leverage techniques such as importance weighting to train your model to work for the real world data.
+Importance weighting consists of two steps: estimate the density ratio between the real-world input distribution
+and the training input distribution, then weight the training data according to this ratio, and train an ML model on
+this weighted data .
+However, because we don’t know in advance how the distribution will change in the real-world, it’s very difficult
+to preemptively train your models to make them robust to new, unknown distributions. There has been research
+that attempts to help models learn representations of latent variables that are invariant across data distributions, but
+I’m not aware of their adoption in the industry.
+Label Shift
+Label shift, also known as prior shift, prior probability shift or target shift, is when P(Y) changes but P(X|Y)
+remains the same. You can think of this as the case when the output distribution changes but for a given output, the
+input distribution stays the same.
+Remember that covariate shift is when the input distribution changes. When the input distribution changes, the
+output distribution also changes, resulting in both covariate shift and label shift happening at the same time.
+Consider the breast cancer example for covariate shift above. Because there are more women over 40 in our
+training data than in our inference data, the percentage of POSITIVE labels is higher during training. However, if
+you randomly select person A with breast cancer from your training data and person B with breast cancer from
+your inference data, A and B have the same probability of being over 40. This means that P(X|Y), or probability of
+age over 40 given having breast cancer, is the same. So this is also a case of label shift.
+However, not all covariate shifts result in label shifts. It’s a subtle point, so we’ll consider another example.
+Imagine that there is now a preventive drug that every woman takes that helps reduce their chance of getting breast
+cancer. The probability P(Y|X) reduces for women of all ages, so it’s no longer a case of covariate shift. However,
+given a person with breast cancer, the age distribution remains the same, so this is still a case of label shift.
+Because label shift is closely related to covariate shift, methods for detecting and adapting models to label shifts
+are similar to covariate shift adaptation methods. We’ll discuss them more in the Handling Data Shifts section
+below.
+Concept Drift
+Concept drift, also known as posterior shift, is when the input distribution remains the same but the conditional
+distribution of the output given an input changes. You can think of this as “same input, different output”. Consider
+you’re in charge of a model that predicts the price of a house based on its features. Before COVID-19, a 3
+bedroom apartment in San Francisco could cost $2,000,000. However, at the beginning of COVID-19, many
+people left San Francisco, so the same house would cost only $1,500,000. So even though the distribution of house
+features remains the same, the conditional distribution of the price of a house given its features has changed.
+In many cases, concept drifts are cyclic or seasonal. For example, rideshare’s prices will fluctuate on weekdays
+versus weekends, and flight tickets rise during holiday seasons. Companies might have different models to deal
+with cyclic and seasonal drifts. For example, they might have one model to predict rideshare prices on weekdays
+and another model for weekends.
+General Data Distribution Shifts
+There are other types of changes in the real-world that, even though not well-studied in research, can still degrade
+your models’ performance.
+One is feature change, such as when new features are added, older features are removed, or the set of all possible
+values of a feature changes . For example, your model was using years for the “age” feature, but now it uses
+2526
+27
+months, so the range of this feature values has drifted. One time, our team realized that our model’s performance
+plummeted because a bug in our pipeline caused a feature to become NaNs.
+Label schema change is when the set of possible values for Y change. With label shift, P(Y) changes but P(X|Y)
+remains the same. With label schema change, both P(Y) and P(X|Y) change. A schema describes the structure of
+the data, so the label schema of a task describes the structure of the labels of that task. For example, a dictionary
+that maps from a class to an integer value, such as {“POSITIVE”: 0, “NEGATIVE”: 1}, is a schema.
+With regression tasks, label schema change could happen because of changes in the possible range of label values.
+Imagine you’re building a model to predict someone’s credit score. Originally, you used a credit score system that
+ranged from 300 to 850, but you switched to a new system that ranges from 250 to 900.
+With classification tasks, label schema change could happen because you have new classes. For example, suppose
+you are building a model to diagnose diseases and there’s a new disease to diagnose. Classes can also become
+outdated or more fine-grained. Imagine that you’re in charge of a sentiment analysis model for tweets that mention
+your brand. Originally, your model predicted only 3 classes: POSITIVE, NEGATIVE, and NEUTRAL. However,
+your marketing department realized the most damaging tweets are the angry ones, so they wanted to break the
+NEGATIVE class into two classes: SAD and ANGRY . Instead of having three classes, your task now has four
+classes. When the number of classes changes, your model’s structure might change,  and you might need to both
+relabel your data and retrain your model from scratch. Label schema change is especially common with high-
+cardinality tasks — tasks with a high number of classes — such as product or documentation categorization.
+There’s no rule that says that only one type of shift should happen at one time. A model might suffer from multiple
+types of drift, which makes handling them a lot more difficult.
+Handling Data Distribution Shifts
+How companies handle data shifts depends on how sophisticated their ML infrastructure setups are. At one end of
+the spectrum, we have companies that have just started with ML and are still working on getting ML models into
+production, so they might not have gotten to the point where data shifts are catastrophic to them. However, at some
+point in the future — maybe 3 months, maybe 6 months — they might realize that their initial deployed models
+have degraded to the point that they do more harm than good. They will then need to adapt their models to the
+shifted distributions or to replace them with other solutions.
+At the same time, many companies assume that data shifts are inevitable, so they periodically retrain their models
+— once a quarter, once a month, once a week, or even once a day — regardless of the extent of the shift. How to
+determine the optimal frequency to retrain your models is an important decision that many companies still
+determine based on gut feelings instead of experimental data . We’ll discuss more about the retraining frequency
+in the Continual Learning section in chapter 8.
+Many companies want to handle data shifts in a more targeted way, which consists of two parts: first, detecting the
+shift and second, addressing the shift.
+Detecting Data Distribution Shifts
+Data distribution shifts are only a problem if they cause your model’s performance to degrade. So the first idea
+might be to monitor your model’s accuracy-related metrics  in production to see whether they have changed.
+“Change” here usually means “decrease”, but if my model’s accuracy suddenly goes up or fluctuates significantly
+for no reason that I’m aware of, I’d want to investigate.
+Accuracy-related metrics work by comparing the model’s predictions to ground truth labels . During model
+development, you have access to ground truth, but in production, you don’t always have access to ground truth,
+and even if you do, ground truth labels will be delayed, as discussed in the section Natural Labels and Feedback
+Loop above. Having access to ground truth within a reasonable time window will vastly help with giving you
+visibility into your model’s performance.
+28
+29
+30
+31
+When ground truth labels are unavailable or too delayed to be useful, we can monitor other distributions of interest
+instead. The distributions of interest are the input distribution P(X), the label distribution P(Y), and the conditional
+distributions P(X|Y) and P(Y|X).
+While we don’t need to know the ground truth labels Y to monitor the input distribution, monitoring the label
+distribution and both of the conditional distributions require knowing Y. In research, there have been efforts to
+understand and detect label shifts without labels from the target distribution. One such effort is Black Box Shift
+Estimation by Lipton et al., 2018. However, in the industry, most drift detection methods focus on detecting
+changes in the input distribution, especially the distributions of features as we’ll discuss in detail in Chapter 8.
+Statistical methods
+In industry, a simple method many companies use to detect whether the two distributions are the same is to
+compare their metrics like mean, median, variance, quantiles, skewness, kurtosis, etc. For example, you can
+compute the median and variance of the values of a feature during inference and compare them to the metrics
+computed during training. As of October 2021, even TensorFlow’s built-in data validation tools use only summary
+statistics to detect the skew between the training and serving data and shifts between different days of training
+data. This is a good start, but these metrics aren’t sufficient. Mean, median, and variance are only useful with the
+distributions for which the mean/median/variance are useful summaries. If those metrics differ significantly, the
+inference distribution might have shifted from the training distribution. However, if those metrics are similar,
+there’s no guarantee that there’s no shift.
+A more sophisticated solution is to use a two-sample hypothesis test, shortened as two-sample test. It’s a test to
+determine whether the difference between two populations (two sets of data) is statistically significant. If the
+difference is statistically significant, then the probability that the difference is a random fluctuation due to
+sampling variability is very low, and therefore, the difference is caused by the fact that these two populations come
+from two distinct distributions. If you consider the data from yesterday to be the source population and the data
+from today to be the target population and they are statistically different, it’s likely that the underlying data
+distribution has shifted between yesterday and today.
+A caveat is that just because the difference is statistically significant doesn’t mean that it is practically important.
+However, a good heuristic is that if you are able to detect the difference from a relatively small sample, then it is
+probably a serious difference. If it takes a huge sample, then it is probably not worth worrying about.
+A basic two-sample test is the Kolmogorov–Smirnov test, also known as K-S or KS test . It’s a nonparametric
+statistical test, which means it doesn’t require any parameters of the underlying distribution to work. It doesn’t
+make any assumption about the underlying distribution, which means it can work for any distribution. However,
+one major drawback of the KS test is that it can only be used for one-dimensional data. If your model’s predictions
+and labels are one-dimensional (scalar numbers), then the KS test is useful to detect label or prediction shifts.
+However, it won’t work for high-dimensional data, and features are usually high-dimensional . K-S tests can also
+be expensive and produce too many false positive alerts .
+Another test is Least-Squares Density Difference, an algorithm that is based on the least squares density-difference
+estimation method . There is also MMD, Maximum Mean Discrepancy, (Gretton et al. 2012) a kernel-based
+technique for multivariate two-sample testing and its variant Learned Kernel MMD (Liu et al., 2020). MMD is
+popular in research, but as of writing this book, I’m not aware of any company that is using it in the industry. alibi-
+detect is a great open-source package with the implementations of many drift detection algorithms, as shown in
+Figure 7-2.
+32
+33
+34
+35
+Figure 7-2. Some drift detection algorithms implemented by alibi-detect. Image screenshotted from its GitHub repository.
+Because two-sample tests often work better on low-dimensional data than on high-dimensional data, it’s highly
+recommended that you reduce the dimensionality of your data before performing a two-sample test on them .
+Time scale windows for detecting shifts
+Not all types of shifts are equal — some are harder to detect than others. For example, shifts happen at different
+rates, and abrupt changes are easier to detect than slow, gradual changes . Shifts can also happen across two
+dimensions: spatial or temporal. Spatial shifts are shifts that happen across access points, such as your application
+gets a new group of users or your application is now served on a different type of device. Temporal shifts are shifts
+that happen over time. To detect temporal shifts, a common approach is to treat input data to ML applications as
+time series data .
+When dealing with temporal shifts, the time scale window of the data we look at affects the shifts we can detect. If
+your data has a weekly cycle, then a time scale of less than a week won’t detect the cycle. Consider the data in
+Figure 7-3. If we use data from day 9 to day 14 as the base distribution, then day 15 looks like a shift. However, if
+we use data from day 1 to day 14 as the base distribution, then all data points from day 15 are likely being
+generated by that same distribution. As illustrated by this example, detecting temporal shifts is hard when shifts are
+confounded by seasonal variation.
+36
+37
+38
+Figure 7-3. Whether a distribution has drifted over time depends on the time scale window specified. If we use data from day 9 to day 14 as the base
+distribution, then day 15 looks like a drift. However, if we use data from day 1 to day 14 as the base distribution, then all data points from day 15 are
+likely being generated by that same distribution.
+When computing running statistics over time, it’s important to differentiate between cumulative and sliding
+statistics. Sliding statistics are computed within a single time scale window, e.g. an hour. Cumulative statistics are
+continually updated with more data. This means for each the beginning of each time scale window, the sliding
+accuracy is reset, whereas the cumulative sliding accuracy is not. Because cumulative statistics contain
+information from previous time windows, they might obscure what happens in a specific time window. Figure 7-4
+shows an example of how cumulative accuracy can hide the sudden dip in accuracy between the hour 16 and 18.
+Figure 7-4. Cumulative accuracy hides the sudden dip in accuracy between the hour 16 and 18. This image is based on an example from MadeWithML.
+Working with data in the temporal space makes things so much more complicated, requiring knowledge of time
+series analysis techniques such as time series decompositions that are beyond the scope of this book. For readers
+interested in time series decomposition, here’s a great case study by Lyft engineering on how they decompose their
+time series data to deal with the seasonality of the market.
+As of today, many companies use the distribution of the training data as the base distribution and monitor the
+production data distribution at a certain granularity level, such as hourly and daily. The shorter your time scale
+window, the faster you’ll be able to detect changes in your data distribution. However, too short a time scale
+window can lead to false alarms of shifts, like the example in Figure 7-3.
+Some platforms, especially those dealing with real-time data analytics such as monitoring, provide a merge
+operation that allows merging statistics from shorter time scale windows to create statistics for larger time scale
+windows. For example, you can compute the data statistics you care about hourly, then merge these hourly
+statistics chunks into daily views.
+More advanced monitoring platforms even attempt a root cause analysis (RCA) feature that automatically analyzes
+metrics across various time window sizes to detect exactly the time window where a change in data happened .
+Addressing Data Distribution Shifts
+To make a model work with a new distribution in production, there are three main approaches. The first is the
+approach that currently dominates research: train models using massive datasets. The hope here is that if the
+training dataset is large enough, the model will be able to learn such a comprehensive distribution that whatever
+data points the model will encounter in production will likely come from this distribution.
+The second approach, less popular in research, is to adapt a trained model to a target distribution without requiring
+new labels. Zhang et al. (2013) used causal interpretations together with kernel embedding of conditional and
+marginal distributions to correct models’ predictions for both covariate shifts and label shifts without using labels
+from the target distribution. Similarly, Zhao et al. (2020) proposed domain-invariant representation learning: an
+unsupervised domain adaptation technique that can learn data representations invariant to changing distributions.
+However, this area of research is heavily underexplored and hasn’t found wide adoption in industry .
+The third approach is what is usually done in the industry today: retrain your model using the labeled data from the
+target distribution. However, retraining your model is not so straightforward. Retraining can mean retraining your
+model from scratch on both the old and new data or continuing training the existing model on new data. The latter
+approach is also called fine-tuning.
+If you want to fine-tune your model, the question might be what data to use: data from the last hour, last 24 hours,
+last week, or last 6 months. A common practice is to fine-tune your model from the point when data has started to
+drift. Another is to fine-tune your model using the data gathered from the last fine-tuning. You might need to run
+experiments to figure out which retraining solution works best for you .
+Fine-tuning on only new data is obviously preferred because it requires less computing resources and runs faster
+than retraining a model from scratch on both the old and new data. However, depending on their setups, many
+companies find that fine-tuning doesn’t give their models good-enough performance, and therefore have to fall
+back to retraining from scratch.
+In this book, we use “retraining” to refer to both training from scratch and fine-tuning. We’ll discuss more about
+the value of data freshness and the retraining frequency in the Continual Learning section in the next chapter.
+Readers familiar with data shift literature might often see data shifts mentioned along with domain adaptation and
+transfer learning. If you consider a distribution to be a domain, then the question of how to adapt your model to
+new distributions is similar to the question of how to adapt your model to different domains.
+Similarly, if you consider learning a joint distribution P(X, Y) as a task, then adapting a model trained on one joint
+distribution for another joint distribution can be framed as a form of transfer learning. As discussed in chapter 3,
+transfer learning refers to the family of methods where a model developed for a task is reused as the starting point
+for a model on a second task. The difference is that with transfer learning, you don’t retrain the base model from
+scratch for the second task. However, to adapt your model to a new distribution, you might need to retrain your
+model from scratch.
+Addressing data distribution shifts doesn’t have to start after the shifts have happened. It’s possible to design your
+system to make it more robust to shifts. A system uses multiple features, and different features shift at different
+rates. Consider that you’re building a model to predict whether a user will download an app. You might be tempted
+to use that app’s ranking in the app store as a feature since higher ranking apps tend to be downloaded more.
+39
+40
+41
+However, app ranking changes very quickly. You might want to instead bucket each app’s ranking into general
+categories such as top 10, between 11 - 100, between 101 - 1000, between 1001 - 10,000, and so on. At the same
+time, an app’s categories might change a lot less frequently, but might have less power to predict whether a user
+will download that app. When choosing features for your models, you might want to consider the trade-off
+between the performance and the stability of a feature: a feature might be really good for accuracy but deteriorate
+quickly, forcing you to train your model more often.
+You might also want to design your system to make it easier for it to adapt to shifts. For example, housing prices
+might change a lot faster in major cities like San Francisco than in rural Arizona, so a housing price prediction
+model serving rural Arizona might need to be updated less frequently than a model serving San Francisco. If you
+use the same model to serve both markets, you’ll have to use data from both markets to update your model at the
+rate demanded by San Francisco. However, if you use a separate model for each market, you can update each of
+them only when necessary.
+Before we move on to the next chapter, I just want to reiterate that not all performance degradation of models in
+production requires ML solutions. Many ML failures today, not software system failures and ML-specific failures,
+are still caused by human errors. If your model failure is caused by human errors, you’d first need to find those
+errors to fix them. Detecting a data shift is hard, but determining what causes a shift can be even harder.
+Summary
+This might have been the most challenging chapter for me to write in this book. The reason is that despite the
+importance of understanding how and why ML systems fail in production, the literature surrounding it is limited.
+We usually think of research preceding production, but this is an area of ML where research is still trying to catch
+up with production.
+In the study of ML outages, the only study I could find comes from Google where Daniel Papasian and Todd
+Underwood looked at 96 cases of ML outage over the previous 15 years. Even for that case, the number of outages
+was relatively small and came from within one company. However, with the standardization of tools, more vendors
+have insights into how their customers’ models failed, which means there’s potential for a larger scale study of ML
+failures across companies and systematic categorization of ML failures.
+In this chapter, we discussed three major causes of ML failures: data distribution shifts, edge cases, and
+degenerative feedback loops. The first two causes are related to data, whereas the last cause is related to system
+design because it happens when the system’s outputs influence the same system’s input. The last cause can be
+especially dangerous since it can cause ML models to perpetuate biases embedded in the training data.
+After discussing causes of ML failures, we went deeper into different types of data distribution shifts. Data
+distribution shifts happen in two scenarios: when the data distribution in production is different from the data
+during training, which is called the train-serving skew, and when the distribution shifts over time in production. We
+also discussed how to detect and address shifts. While it might be possible to address a data distribution shift
+without retraining the model, in the industry, the most common solution is to retrain the model.
+Even though this is a growing subfield of ML research, the research community hasn’t yet found a standard
+narrative. Different papers call the same phenomena by different names, and occasionally there is confusion on
+what exactly is concept drift or covariate shift. Many studies are still based on the assumption that we know in
+advance how the distribution will shift or have the labels for the data from both the source distribution and the
+target distribution. However, in reality, we don’t know what the future data will be like, and it can be too costly or
+slow or infeasible to obtain labels for new data.
+Figuring out how ML models fail in production is the easy step. The difficult step is how to monitor our systems
+for failures and how to adapt our systems to changing environments, which we’ll discuss in the next chapter:
+Monitoring and Continual Learning.
+1  This is one of the reasons why many companies are hesitant to use products by small startups, and why many companies prefer to use open-
+source software. When a product you use is no longer maintained by its creators, if that product is open-source, at least you’ll be able to access the
+codebase and maintain it yourself.
+2  Cosmic rays can cause your hardware to break down.
+3  A non-ML failure might still be indirectly due to ML. For example, a server can crash for non-ML systems, but because ML systems tend to
+require more compute power, it might cause this server to crash more often.
+4  The peak of my career: Elon Musk agreed with me.
+5  Back when in-person academic conferences were still a thing, I often heard researchers arguing about whose models can generalize better. “My
+model generalizes better than your model” is the ultimate flex.
+6  Machine Learning in Non-Stationary Environments: Introduction to Covariate Shift Adaptation (Sugiyama and Kawanabe, The MIT Press 2012)
+7  Limits to Growth: Can AI’s V oracious Appetite for Data Be Tamed? (John Mcquaid, Undark 2021)
+8  The CTO of a monitoring service company told me that in his estimate, 80% of the drifts captured by his service are caused by human errors.
+9  This means the self-driving car is a bit less safe than an average human driver. As of 2019, the ratio of traffic-related fatalities per 100,000
+licensed drivers was 15.8, or 0.0158%.
+10  Edge Cases For Self Driving Cars – Rodney Brooks (2017)
+11  Whether Those Endless Edge Or Corner Cases Are The Long-Tail Doom For AI Self-Driving Cars (Forbes, 2021)
+12    Self-driving cars will be shaped by simulated, location data (Protocol, 2021)
+13  eDiscovery, or electronic discovery, refers to discovery in legal proceedings such as litigation, government investigations, or Freedom of
+Information Act requests, where the information sought is in electronic format.
+14  Degenerate Feedback Loops in Recommender Systems (Jiang et al., 2019)
+15  This is related to “survivorship bias”.
+16  Beyond NDCG: behavioral testing of recommender systems with RecList (Chia et al., 2021)
+17  Why TikTok made its user so obsessive? The AI Algorithm that got you hooked (Catherine Wang, 2020)
+18  Improving Aggregate Recommendation Diversity Using Ranking-Based Techniques (Adomavicius et al., 2011)
+19  Incremental Learning from Noisy Data (Schlimmer and Granger, 1986)
+20  You might wonder what about the case when P(X|Y) changes but P(Y) remains the same, as in the second decomposition. I’ve never encountered
+any research in this setting. I asked a couple of researchers who specialize in data shifts about it and they also told me that setting would be too
+difficult to study.
+21  An introduction to domain adaptation and transfer learning (Kouw and Loog, 2018)
+22  Breast Cancer Risk in American Women (National Cancer Institute)
+23  Covariate shift by kernel mean matching (Gretton et al., Journal of Machine Learning Research 2009)
+24  Machine Learning in Non-Stationary Environments: Introduction to Covariate Shift Adaptation (Sugiyama and Kawanabe, The MIT Press 2012)
+25  Rethinking Importance Weighting for Deep Learning under Distribution Shift (Fang et al., NeurIPS Proceedings 2020)
+26  Covariate shift by kernel mean matching (Gretton et al., Journal of Machine Learning Research 2009)
+27  You can think of this as the case where both P(X) and P(Y|X) change.
+28  If you use a neural network using softmax as your last layer for your classification tax. The dimension of this softmax layer is
+[number_of_hidden_units x number_of_clases]. When the number of classes changes, the number of parameters in your softmax layer changes.
+29  As Han-chung Lee, one early reviewer, pointed out, this is also because smaller companies don’t have enough data on their models. When you
+don’t have a lot of data, it’s better to have a time-based regimen than to overfit your regime to insufficient data.
+30  As a reminder, accuracy-related metrics include accuracy, F1 score, recall, AUC-ROC, etc.
+31  You don’t need ground truth labels if you use an unsupervised learning method, but the vast majority of applications today are supervised.
+32  Handbook of Methods of Applied Statistics, V olume 1 (Chakravart, Laha, and Roy, 1967).
+33  Beware the Kolmogorov-Smirnov test! (Feigelson and Babu, Center for Astrostatistics, Penn State University)
+34  Data validation for machine learning (Breck et al., Proceedings of SysML 2019)
+35  A pdf-Free Change Detection Test Based on Density Difference Estimation (Bu et al., 2016). The authors claim that the method works on
+multidimensional inputs.
+36  Failing Loudly: An Empirical Study of Methods for Detecting Dataset Shift (Rabanser et al., 2018)
+37  Early Drift Detection Method (Baena-Garcia et al., 2006)
+38  Real-time Drift Detection on Time-series Data (Ramanan et al., 2021)
+39  Thanks Goku Mohandas for the tip.
+40  Detecting and Correcting for Label Shift with Black Box Predictors (Lipton et al., 2018)
+41  Some monitoring vendors claim that their solutions are able to detect not only when your model should be retrained, but also what data to retrain
+on. I haven’t been able to verify the validity of these claims.

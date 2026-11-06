@@ -1,0 +1,94 @@
+import subprocess
+import os
+
+vendor_dir = os.path.abspath(r'd:\Documents\IE104.R12\.book_cache\vendor').replace('\\', '/')
+
+test_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script>
+    window.MathJax = {{
+      tex: {{
+        inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+        displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+      }},
+      svg: {{
+        fontCache: 'none'
+      }},
+      startup: {{
+        pageReady: () => {{
+          return MathJax.startup.defaultPageReady().then(() => {{
+            console.log('MathJax ready');
+            document.body.classList.add('mathjax-ready');
+          }});
+        }}
+      }}
+    }};
+    </script>
+    <script src="file:///{vendor_dir}/tex-svg.js"></script>
+    <script src="file:///{vendor_dir}/mermaid.min.js"></script>
+    <script>
+    mermaid.initialize({{
+        startOnLoad: true,
+        theme: 'neutral',
+        flowchart: {{ useMaxWidth: false, htmlLabels: true }}
+    }});
+    </script>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            padding: 30px;
+        }}
+        .mermaid {{
+            margin: 20px 0;
+            text-align: center;
+        }}
+        mjx-container {{
+            margin: 12px 0 !important;
+        }}
+    </style>
+</head>
+<body>
+    <h2>1.1. Formal Definition of Machine Learning</h2>
+    <p>Machine Learning (ML) is neither an all-purpose optimization engine nor an infallible heuristic. Formally, Machine Learning is defined as:</p>
+    
+    <div>
+    $$\\text{{An engineering approach to }} \\underbrace{{\\textbf{{learn}}}}_{{(1)}} \\underbrace{{\\textbf{{complex}}}}_{{(2)}} \\underbrace{{\\textbf{{patterns}}}}_{{(3)}} \\text{{ from }} \\underbrace{{\\textbf{{existing data}}}}_{{(4)}} \\text{{ and use these patterns to make }} \\underbrace{{\\textbf{{predictions}}}}_{{(5)}} \\text{{ on }} \\underbrace{{\\textbf{{unseen data}}}}_{{(6)}}.$$
+    </div>
+
+    <p>Mapping function $f: X \\to Y$ is too complex. Also lookup table is $O(1)$ complexity.</p>
+
+    <div class="mermaid">
+    flowchart LR
+        C1["(1) Capacity to Learn<br/>Parameterized weights"] --> C2["(2) Pattern Complexity<br/>Non-linear mappings"]
+        C2 --> C3["(3) Existence of Patterns<br/>Statistical regularities"]
+    </div>
+</body>
+</html>"""
+
+html_path = r'd:\Documents\IE104.R12\.book_cache\test_mathjax.html'
+pdf_path = r'd:\Documents\IE104.R12\.book_cache\test_mathjax.pdf'
+
+with open(html_path, 'w', encoding='utf-8') as f:
+    f.write(test_html)
+
+chrome = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+res = subprocess.run([
+    chrome,
+    '--headless',
+    '--disable-gpu',
+    '--no-pdf-header-footer',
+    '--virtual-time-budget=5000',
+    '--run-all-compositor-stages-before-draw',
+    f'--print-to-pdf={pdf_path}',
+    html_path
+], capture_output=True, text=True)
+
+print("Return code:", res.returncode)
+print("Stderr:", res.stderr.strip())
+if os.path.exists(pdf_path):
+    print("PDF generated successfully! Size:", os.path.getsize(pdf_path))
+

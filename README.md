@@ -44,6 +44,11 @@ IE104-FoodReview-VNU/
 │       ├── Services/                      # Business Logic (Dapper)
 │       ├── Data/                          # Connection Factory & Seed Data
 │       └── Program.cs                     # Startup Pipeline
+├── frontend/                              # Frontend thử nghiệm API (HTML/CSS/JS thuần)
+│   ├── index.html
+│   ├── css/styles.css
+│   ├── js/                                # config, api, auth, places, reviews, admin
+│   └── README.md                          # Hướng dẫn chạy & danh sách API đã nối
 ├── GEMINI.md                              # Behavioral guidelines cho AI Pair Programming
 └── README.md
 ```
@@ -71,3 +76,23 @@ Sau khi server khởi chạy, mở trình duyệt truy cập:
 Tài khoản thử nghiệm sẵn có:
 - **Admin:** `admin@langdaihoc.vn` / `Admin@123`
 - **Sinh viên:** `sinhvien@uit.edu.vn` / `Student@123`
+
+---
+
+## 🖥️ Frontend thử nghiệm API
+
+Thư mục `frontend/` chứa giao diện HTML + CSS + JavaScript thuần (không cần build) để thử toàn bộ API: đăng nhập, khám phá/lọc quán, chi tiết, yêu thích, đánh giá kèm upload ảnh và bảng quản trị.
+
+```bash
+# Terminal 1 — backend
+cd backend/FoodReview.Api
+dotnet run
+
+# Terminal 2 — static server cho frontend
+cd frontend
+python -m http.server 5500
+```
+
+Mở 👉 **`http://localhost:5500`**. Nếu backend chạy ở cổng khác, cập nhật `API_BASE_URL` trong `frontend/js/config.js`.
+
+Chi tiết cấu trúc và danh sách endpoint đã nối: [`frontend/README.md`](frontend/README.md).

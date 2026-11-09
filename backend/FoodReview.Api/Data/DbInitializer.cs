@@ -1,4 +1,3 @@
-using System.Data;
 using Dapper;
 
 namespace FoodReview.Api.Data;
@@ -9,106 +8,22 @@ public static class DbInitializer
     {
         using var conn = factory.CreateConnection();
 
-        // 1. Execute schema.sql to ensure all tables, indexes and constraints exist
-        var schemaPath = Path.Combine(env.ContentRootPath, "..", "..", "docs", "schema.sql");
-        string schemaSql;
+        var schemaPath = Path.Combine(env.ContentRootPath, "schema.sql");
+        if (!File.Exists(schemaPath))
+        {
+            schemaPath = Path.Combine(env.ContentRootPath, "..", "..", "docs", "schema.sql");
+        }
 
         if (File.Exists(schemaPath))
         {
-            schemaSql = await File.ReadAllTextAsync(schemaPath);
+            var schemaSql = await File.ReadAllTextAsync(schemaPath);
+            await conn.ExecuteAsync(schemaSql);
         }
         else
         {
-            // Fallback inline DDL
-            schemaSql = @"
-                PRAGMA foreign_keys = ON;
-                CREATE TABLE IF NOT EXISTS Users (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Email TEXT NOT NULL UNIQUE,
-                    PasswordHash TEXT NOT NULL,
-                    DisplayName TEXT NOT NULL,
-                    AvatarUrl TEXT,
-                    Role INTEGER NOT NULL DEFAULT 0,
-                    Status INTEGER NOT NULL DEFAULT 0,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-                CREATE TABLE IF NOT EXISTS Areas (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL,
-                    Description TEXT,
-                    ParentAreaId INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS Categories (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL,
-                    Slug TEXT NOT NULL UNIQUE,
-                    Icon TEXT
-                );
-                CREATE TABLE IF NOT EXISTS Places (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name TEXT NOT NULL,
-                    Slug TEXT NOT NULL UNIQUE,
-                    Description TEXT,
-                    Address TEXT NOT NULL,
-                    AreaId INTEGER NOT NULL,
-                    CategoryId INTEGER NOT NULL,
-                    PriceMin REAL NOT NULL DEFAULT 0,
-                    PriceMax REAL NOT NULL DEFAULT 0,
-                    OpeningHours TEXT DEFAULT '07:00 - 21:00',
-                    Latitude REAL,
-                    Longitude REAL,
-                    CoverImageUrl TEXT,
-                    Status INTEGER NOT NULL DEFAULT 1,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
-                    UpdatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-                CREATE TABLE IF NOT EXISTS MenuItems (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    PlaceId INTEGER NOT NULL,
-                    Name TEXT NOT NULL,
-                    Price REAL NOT NULL DEFAULT 0,
-                    Note TEXT
-                );
-                CREATE TABLE IF NOT EXISTS Reviews (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    PlaceId INTEGER NOT NULL,
-                    UserId INTEGER NOT NULL,
-                    Rating INTEGER NOT NULL,
-                    Content TEXT NOT NULL,
-                    Status INTEGER NOT NULL DEFAULT 1,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
-                    UpdatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-                CREATE TABLE IF NOT EXISTS ReviewImages (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ReviewId INTEGER NOT NULL,
-                    ImageUrl TEXT NOT NULL,
-                    AltText TEXT,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-                CREATE TABLE IF NOT EXISTS Reports (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ReporterId INTEGER NOT NULL,
-                    ReviewId INTEGER NOT NULL,
-                    Reason INTEGER NOT NULL DEFAULT 3,
-                    Description TEXT,
-                    Status INTEGER NOT NULL DEFAULT 0,
-                    HandledBy INTEGER,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
-                    HandledAt TEXT
-                );
-                CREATE TABLE IF NOT EXISTS Favorites (
-                    UserId INTEGER NOT NULL,
-                    PlaceId INTEGER NOT NULL,
-                    CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
-                    PRIMARY KEY (UserId, PlaceId)
-                );
-            ";
+            throw new FileNotFoundException($"Không tìm thấy file schema.sql tại '{schemaPath}'.");
         }
 
-        await conn.ExecuteAsync(schemaSql);
-
-        // 2. Seed Users via Dapper
         var userCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Users");
         if (userCount == 0)
         {
@@ -127,7 +42,6 @@ public static class DbInitializer
             });
         }
 
-        // 3. Seed Areas via Dapper
         var areaCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Areas");
         if (areaCount == 0)
         {
@@ -143,42 +57,36 @@ public static class DbInitializer
             });
         }
 
-        // 4. Seed Categories via Dapper
         var catCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Categories");
         if (catCount == 0)
         {
             var insertCatSql = "INSERT INTO Categories (Name, Slug, Icon) VALUES (@Name, @Slug, @Icon)";
             await conn.ExecuteAsync(insertCatSql, new[]
             {
-                new { Name = "Cơm Trưa / Cơm Tấm", Slug = "com-trua-com-tam", Icon = "🍚" },
-                new { Name = "Bún / Phở / Mì", Slug = "bun-pho-mi", Icon = "🍜" },
-                new { Name = "Ăn Vặt & Xiên Nướng", Slug = "an-vat-xien-nuong", Icon = "🍢" },
-                new { Name = "Trà Sữa & Cà Phê", Slug = "tra-sua-ca-phe", Icon = "🧋" },
-                new { Name = "Lẩu & Nướng Sinh Viên", Slug = "lau-nuong-sinh-vien", Icon = "🍲" },
-                new { Name = "Món Chay", Slug = "mon-chay", Icon = "🥗" }
+                new { Name = "Cơm Trưa / Cơm Tấm", Slug = "com-trua-com-tam", Icon = "utensils" },
+                new { Name = "Bún / Phở / Mì", Slug = "bun-pho-mi", Icon = "soup" },
+                new { Name = "Ăn Vặt & Xiên Nướng", Slug = "an-vat-xien-nuong", Icon = "flame" },
+                new { Name = "Trà Sữa & Cà Phê", Slug = "tra-sua-ca-phe", Icon = "coffee" },
+                new { Name = "Lẩu & Nướng Sinh Viên", Slug = "lau-nuong-sinh-vien", Icon = "pot" },
+                new { Name = "Món Chay", Slug = "mon-chay", Icon = "leaf" }
             });
         }
 
-        // 5. Seed Places via Dapper
         var placeCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM Places");
         if (placeCount == 0)
         {
-            var ktxBId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name LIKE '%Khu B%' LIMIT 1");
-            var ktxAId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name LIKE '%Khu A%' LIMIT 1");
-            var choDemId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name LIKE '%Chợ Đêm%' LIMIT 1");
-            var docQtId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name LIKE '%Quốc Tế%' LIMIT 1");
+            var ktxBId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name ILIKE '%Khu B%' LIMIT 1");
+            var ktxAId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Areas WHERE Name ILIKE '%Khu A%' LIMIT 1");
 
             var catComId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Categories WHERE Slug = 'com-trua-com-tam' LIMIT 1");
             var catBunId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Categories WHERE Slug = 'bun-pho-mi' LIMIT 1");
-            var catNuocId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Categories WHERE Slug = 'tra-sua-ca-phe' LIMIT 1");
-            var catVatId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Categories WHERE Slug = 'an-vat-xien-nuong' LIMIT 1");
 
             var studentId = await conn.ExecuteScalarAsync<int>("SELECT Id FROM Users WHERE Role = 0 LIMIT 1");
 
             var insertPlaceSql = @"
                 INSERT INTO Places (Name, Slug, Description, Address, AreaId, CategoryId, PriceMin, PriceMax, OpeningHours, Latitude, Longitude, CoverImageUrl, Status)
-                VALUES (@Name, @Slug, @Description, @Address, @AreaId, @CategoryId, @PriceMin, @PriceMax, @OpeningHours, @Latitude, @Longitude, @CoverImageUrl, @Status);
-                SELECT last_insert_rowid();";
+                VALUES (@Name, @Slug, @Description, @Address, @AreaId, @CategoryId, @PriceMin, @PriceMax, @OpeningHours, @Latitude, @Longitude, @CoverImageUrl, @Status)
+                RETURNING Id;";
 
             // Place 1
             var p1Id = await conn.ExecuteScalarAsync<int>(insertPlaceSql, new
@@ -189,8 +97,8 @@ public static class DbInitializer
                 Address = "Số 18 Đường Tô Vĩnh Diện, đối diện cổng KTX Khu B",
                 AreaId = ktxBId,
                 CategoryId = catComId,
-                PriceMin = 25000,
-                PriceMax = 40000,
+                PriceMin = 25000m,
+                PriceMax = 40000m,
                 OpeningHours = "06:30 - 21:00",
                 Latitude = 10.8801,
                 Longitude = 106.7792,
@@ -200,15 +108,15 @@ public static class DbInitializer
 
             await conn.ExecuteAsync("INSERT INTO MenuItems (PlaceId, Name, Price, Note) VALUES (@PlaceId, @Name, @Price, @Note)", new[]
             {
-                new { PlaceId = p1Id, Name = "Cơm sườn nướng", Price = 28000, Note = (string?)"Món bán chạy nhất" },
-                new { PlaceId = p1Id, Name = "Cơm sườn bì chả trứng", Price = 38000, Note = (string?)"Suất đặc biệt" },
-                new { PlaceId = p1Id, Name = "Cơm đùi gà chiên nước mắm", Price = 32000, Note = (string?)null }
+                new { PlaceId = p1Id, Name = "Cơm sườn nướng", Price = 28000m, Note = (string?)"Món bán chạy nhất" },
+                new { PlaceId = p1Id, Name = "Cơm sườn bì chả trứng", Price = 38000m, Note = (string?)"Suất đặc biệt" },
+                new { PlaceId = p1Id, Name = "Cơm đùi gà chiên nước mắm", Price = 32000m, Note = (string?)null }
             });
 
             var r1Id = await conn.ExecuteScalarAsync<int>(@"
                 INSERT INTO Reviews (PlaceId, UserId, Rating, Content, Status)
-                VALUES (@PlaceId, @UserId, 5, @Content, 1);
-                SELECT last_insert_rowid();", new
+                VALUES (@PlaceId, @UserId, 5, @Content, 1)
+                RETURNING Id;", new
             {
                 PlaceId = p1Id,
                 UserId = studentId,
@@ -231,8 +139,8 @@ public static class DbInitializer
                 Address = "Đường A1, Cạnh cổng phụ KTX Khu A ĐHQG",
                 AreaId = ktxAId,
                 CategoryId = catBunId,
-                PriceMin = 30000,
-                PriceMax = 45000,
+                PriceMin = 30000m,
+                PriceMax = 45000m,
                 OpeningHours = "06:00 - 21:30",
                 Latitude = 10.8752,
                 Longitude = 106.8011,
@@ -242,8 +150,8 @@ public static class DbInitializer
 
             await conn.ExecuteAsync("INSERT INTO MenuItems (PlaceId, Name, Price, Note) VALUES (@PlaceId, @Name, @Price, @Note)", new[]
             {
-                new { PlaceId = p2Id, Name = "Bún bò tái nạm", Price = 35000, Note = (string?)null },
-                new { PlaceId = p2Id, Name = "Bún bò gân giò đặc biệt", Price = 45000, Note = (string?)null }
+                new { PlaceId = p2Id, Name = "Bún bò tái nạm", Price = 35000m, Note = (string?)null },
+                new { PlaceId = p2Id, Name = "Bún bò gân giò đặc biệt", Price = 45000m, Note = (string?)null }
             });
 
             await conn.ExecuteAsync(@"
@@ -252,43 +160,7 @@ public static class DbInitializer
             {
                 PlaceId = p2Id,
                 UserId = studentId,
-                Content = "Nước lèo rất thơm, sa tế cay nồng đã miệng. Buổi sáng hơi đông nên phải đợi khoảng 5-10 phút."
-            });
-
-            // Place 3
-            await conn.ExecuteScalarAsync<int>(insertPlaceSql, new
-            {
-                Name = "Trà Sữa & Cà Phê Chạy Deadline May Tea",
-                Slug = "may-tea-lang-dai-hoc",
-                Description = "Không gian máy lạnh 2 tầng yên tĩnh có nhiều ổ cắm điện, wifi cáp quang tốc độ cao chuyên cho sinh viên học nhóm.",
-                Address = "Trục Chợ Đêm mới, Gần Nhà văn hóa Sinh viên",
-                AreaId = choDemId,
-                CategoryId = catNuocId,
-                PriceMin = 20000,
-                PriceMax = 40000,
-                OpeningHours = "07:30 - 23:00",
-                Latitude = 10.8778,
-                Longitude = 106.7985,
-                CoverImageUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
-                Status = 1
-            });
-
-            // Place 4
-            await conn.ExecuteScalarAsync<int>(insertPlaceSql, new
-            {
-                Name = "Bánh Tráng Nướng & Bò Bía Dốc Quốc Tế",
-                Slug = "banh-trang-nuong-doc-quoc-te",
-                Description = "Điểm hẹn quen thuộc mỗi buổi chiều mát mẻ của sinh viên IU và KHTN. Đồ ăn vặt giòn rụm, nóng hổi, giá siêu rẻ.",
-                Address = "Đầu dốc Đại học Quốc Tế, Khu phố 6, Linh Trung",
-                AreaId = docQtId,
-                CategoryId = catVatId,
-                PriceMin = 10000,
-                PriceMax = 25000,
-                OpeningHours = "15:00 - 22:00",
-                Latitude = 10.8785,
-                Longitude = 106.8042,
-                CoverImageUrl = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800",
-                Status = 1
+                Content = "Nước dùng rất thơm, nêm nếm đậm đà. Ăn xong no căng bụng giá chỉ 35k quá hợp túi tiền sinh viên."
             });
         }
     }

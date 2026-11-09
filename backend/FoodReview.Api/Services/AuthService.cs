@@ -38,8 +38,8 @@ public class AuthService : IAuthService
 
         var insertSql = @"
             INSERT INTO Users (Email, PasswordHash, DisplayName, Role, Status)
-            VALUES (@Email, @PasswordHash, @DisplayName, 0, 0);
-            SELECT last_insert_rowid();";
+            VALUES (@Email, @PasswordHash, @DisplayName, 0, 0)
+            RETURNING Id;";
 
         var newUserId = await conn.ExecuteScalarAsync<int>(insertSql, new
         {

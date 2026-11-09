@@ -19,6 +19,9 @@ public class ReviewsController : ControllerBase
         _interactionService = interactionService;
     }
 
+    /// <summary>
+    /// Lấy danh sách review đã duyệt của một quán ăn kèm hình ảnh và tác giả
+    /// </summary>
     [HttpGet("place/{placeId:int}")]
     public async Task<ActionResult<ApiResponse<PagedResult<ReviewDto>>>> GetByPlace(int placeId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
@@ -26,6 +29,9 @@ public class ReviewsController : ControllerBase
         return Ok(new ApiResponse<PagedResult<ReviewDto>>(true, "Lấy danh sách đánh giá thành công.", result));
     }
 
+    /// <summary>
+    /// Lấy danh sách các bài review do chính người dùng hiện tại đã đăng
+    /// </summary>
     [Authorize]
     [HttpGet("my")]
     public async Task<ActionResult<ApiResponse<PagedResult<ReviewDto>>>> GetMyReviews([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
@@ -40,6 +46,9 @@ public class ReviewsController : ControllerBase
         return Ok(new ApiResponse<PagedResult<ReviewDto>>(true, "Lấy đánh giá của tôi thành công.", result));
     }
 
+    /// <summary>
+    /// Đăng bài đánh giá mới cho quán ăn (Điểm số 1-5, nội dung, kèm link ảnh)
+    /// </summary>
     [Authorize]
     [HttpPost("place/{placeId:int}")]
     public async Task<ActionResult<ApiResponse<ReviewDto>>> Create(int placeId, [FromBody] CreateReviewRequest request)
@@ -65,6 +74,9 @@ public class ReviewsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Chỉnh sửa bài review của chính mình (chỉ tác giả mới có quyền sửa)
+    /// </summary>
     [Authorize]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<ApiResponse<ReviewDto>>> Update(int id, [FromBody] UpdateReviewRequest request)
@@ -90,6 +102,9 @@ public class ReviewsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Xóa bài review của chính mình (chỉ tác giả mới có quyền xóa)
+    /// </summary>
     [Authorize]
     [HttpDelete("{id:int}")]
     public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
@@ -115,6 +130,9 @@ public class ReviewsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Báo cáo vi phạm (Spam, phản cảm, thông tin sai lệch) cho một bài review
+    /// </summary>
     [Authorize]
     [HttpPost("{id:int}/report")]
     public async Task<ActionResult<ApiResponse<ReportDto>>> ReportReview(int id, [FromBody] CreateReportRequest request)

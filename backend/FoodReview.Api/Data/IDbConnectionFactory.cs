@@ -1,5 +1,5 @@
 using System.Data;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace FoodReview.Api.Data;
 
@@ -8,20 +8,20 @@ public interface IDbConnectionFactory
     IDbConnection CreateConnection();
 }
 
-public class SqliteConnectionFactory : IDbConnectionFactory
+public class PostgresConnectionFactory : IDbConnectionFactory
 {
     private readonly string _connectionString;
 
-    public SqliteConnectionFactory(IConfiguration config)
+    public PostgresConnectionFactory(IConfiguration config)
     {
-        _connectionString = config.GetConnectionString("DefaultConnection") ?? "Data Source=FoodReview.db";
+        _connectionString = config.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Chuỗi kết nối 'DefaultConnection' chưa được cấu hình.");
     }
 
     public IDbConnection CreateConnection()
     {
-        var connection = new SqliteConnection(_connectionString);
+        var connection = new NpgsqlConnection(_connectionString);
         connection.Open();
         return connection;
     }
 }
-

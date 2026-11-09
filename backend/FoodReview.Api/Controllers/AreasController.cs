@@ -16,6 +16,9 @@ public class AreasController : ControllerBase
         _service = service;
     }
 
+    /// <summary>
+    /// Lấy danh sách các khu vực ẩm thực tại Làng Đại học (KTX Khu A, KTX Khu B, Chợ đêm,...)
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<AreaDto>>>> GetAll()
     {
@@ -23,6 +26,9 @@ public class AreasController : ControllerBase
         return Ok(new ApiResponse<List<AreaDto>>(true, "Lấy danh sách khu vực thành công.", areas));
     }
 
+    /// <summary>
+    /// [Admin] Thêm mới khu vực ẩm thực
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<ActionResult<ApiResponse<AreaDto>>> Create([FromBody] CreateAreaRequest request)

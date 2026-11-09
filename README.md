@@ -5,7 +5,7 @@
 
 ---
 
-## 🌟 Giới thiệu Dự án
+## Giới thiệu Dự án
 
 **Food Review - Làng Đại học** là nền tảng thông tin và cộng đồng đánh giá địa điểm ăn uống dành riêng cho sinh viên và cư dân tại khu vực Làng Đại học Quốc gia TP.HCM.
 
@@ -16,18 +16,19 @@ Hệ thống tập trung giải quyết 3 câu hỏi thiết thực:
 
 ---
 
-## 🏗️ Kiến trúc Công nghệ (Backend)
+## Kiến trúc Công nghệ (Backend)
 
 - **Platform:** .NET 9 SDK (C# 13)
 - **Framework:** ASP.NET Core Web API
-- **Data Access Layer:** **Dapper Micro-ORM** (High-Performance Raw SQL & Multi-Mapping)
-- **Database Engine:** SQLite (khởi tạo từ `docs/schema.sql`), hỗ trợ chuyển đổi sang PostgreSQL / SQL Server linh hoạt.
-- **Bảo mật & Phân quyền:** JWT Bearer Authentication, băm mật khẩu BCrypt, RBAC (Guest, User, Admin).
-- **Tài liệu API:** Swagger / OpenAPI UI tương tác trực tiếp (`/swagger`).
+- **Data Access Layer:** Dapper Micro-ORM (Raw SQL & Dynamic Parameters)
+- **Database Engine:** PostgreSQL 16
+- **Containerization:** Docker & Docker Compose
+- **Bảo mật & Phân quyền:** JWT Bearer Authentication, BCrypt Password Hashing, Role-Based Access Control (Admin, User)
+- **Tài liệu API:** Swagger / OpenAPI UI (`/swagger`)
 
 ---
 
-## 📁 Cấu trúc Thư mục
+## Cấu trúc Thư mục
 
 ```
 IE104-FoodReview-VNU/
@@ -35,7 +36,7 @@ IE104-FoodReview-VNU/
 │   ├── prd.md                             # Yêu cầu sản phẩm (PRD)
 │   ├── ARCHITECTURE-SPINE.md              # Thiết kế kiến trúc & ERD
 │   ├── DATA_COLLECTION_GUIDE.md           # Hướng dẫn thu thập dữ liệu & hình ảnh
-│   └── schema.sql                         # Single Source of Truth DDL
+│   └── schema.sql                         # PostgreSQL Single Source of Truth DDL
 ├── backend/                               # Mã nguồn Backend
 │   └── FoodReview.Api/                    # ASP.NET Core 9 Web API
 │       ├── Controllers/                   # RESTful API Endpoints
@@ -43,35 +44,34 @@ IE104-FoodReview-VNU/
 │       ├── DTOs/                          # Request / Response Models
 │       ├── Services/                      # Business Logic (Dapper)
 │       ├── Data/                          # Connection Factory & Seed Data
+│       ├── Dockerfile                     # Multi-stage Docker build
 │       └── Program.cs                     # Startup Pipeline
 ├── frontend/                              # Frontend thử nghiệm API (HTML/CSS/JS thuần)
 │   ├── index.html
 │   ├── css/styles.css
 │   ├── js/                                # config, api, auth, places, reviews, admin
 │   └── README.md                          # Hướng dẫn chạy & danh sách API đã nối
-├── GEMINI.md                              # Behavioral guidelines cho AI Pair Programming
+├── docker-compose.yml                     # Cấu hình container API + PostgreSQL
+├── .dockerignore
+├── GEMINI.md                              # Quy chuẩn pair-programming
 └── README.md
 ```
 
 ---
 
-## 🚀 Hướng dẫn Cài đặt & Chạy Backend
+## Hướng dẫn Cài đặt & Khởi chạy
 
-### 1. Yêu cầu môi trường
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) trở lên.
+### Cách 1: Chạy bằng Docker Compose (Khuyên dùng)
 
-### 2. Khởi chạy API
+Yêu cầu máy đã cài đặt và bật [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
 ```bash
-# Di chuyển vào thư mục Web API
-cd backend/FoodReview.Api
-
-# Chạy ứng dụng (database sẽ tự động khởi tạo và seed dữ liệu mẫu)
-dotnet run
+# Khởi chạy toàn bộ hệ thống (PostgreSQL 16 + Web API)
+docker compose up --build
 ```
 
-### 3. Trải nghiệm Swagger API
-Sau khi server khởi chạy, mở trình duyệt truy cập:
-👉 **`http://localhost:5114/swagger`**
+- **Swagger UI:** `http://localhost:5000/swagger`
+- **PostgreSQL Server:** `localhost:5432` (Database: `foodreview`, User: `foodreview_user`)
 
 Tài khoản thử nghiệm sẵn có:
 - **Admin:** `admin@langdaihoc.vn` / `Admin@123`
@@ -96,3 +96,21 @@ python -m http.server 5500
 Mở 👉 **`http://localhost:5500`**. Nếu backend chạy ở cổng khác, cập nhật `API_BASE_URL` trong `frontend/js/config.js`.
 
 Chi tiết cấu trúc và danh sách endpoint đã nối: [`frontend/README.md`](frontend/README.md).
+Lệnh dừng container:
+```bash
+docker compose down
+```
+
+---
+
+### Dữ liệu mẫu (Seed Data)
+
+Hệ thống tự động nạp sẵn dữ liệu ban đầu khi khởi chạy:
+
+- **Tài khoản kiểm thử:**
+  - Quản trị viên (Admin): `admin@langdaihoc.vn` / Mật khẩu: `Admin@123`
+  - Sinh viên 1 (User): `sinhvien@uit.edu.vn` / Mật khẩu: `Student@123`
+  - Sinh viên 2 (User): `thuytien@hcmus.edu.vn` / Mật khẩu: `Student@123`
+- **Khu vực ẩm thực:** KTX Khu A, KTX Khu B, Chợ Đêm ĐHQG, Dốc ĐH Quốc Tế, Vành đai ĐHQG, Tân Lập.
+- **Danh mục món ăn:** Cơm Trưa / Cơm Tấm, Bún / Phở / Mì, Ăn Vặt & Xiên Nướng, Trà Sữa & Cà Phê, Lẩu & Nướng, Món Chay.
+- **Quán ăn mẫu:** Cơm Tấm Cây Bàng (KTX Khu B) và Bún Bò Huế O Oanh (KTX Khu A) kèm thực đơn và đánh giá mẫu.

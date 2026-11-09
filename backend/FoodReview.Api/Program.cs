@@ -7,10 +7,8 @@ using FoodReview.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add Dapper Database Connection Factory (Singleton / Scoped)
-builder.Services.AddSingleton<IDbConnectionFactory, SqliteConnectionFactory>();
+builder.Services.AddSingleton<IDbConnectionFactory, PostgresConnectionFactory>();
 
-// 2. Add Business Services (Pure Dapper)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICategoryAreaService, CategoryAreaService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
@@ -19,7 +17,6 @@ builder.Services.AddScoped<IInteractionService, InteractionService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
-// 3. Configure JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "FoodReviewLangDaiHocSuperSecretKeyForDevelopment2026!@#$%^";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "FoodReviewApi";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "FoodReviewClient";
@@ -48,7 +45,6 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// 4. Configure CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -62,15 +58,28 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// 5. Configure Swagger / OpenAPI with JWT Bearer support
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Food Review - Làng Đại học API (Dapper Architecture)",
+        Title = "Food Review API",
         Version = "v1",
-        Description = "Hệ thống API RESTful Backend cho Website Review Làng Đại học ĐHQG TP.HCM xây dựng bằng Dapper Micro-ORM và C# 13 .NET 9."
+        Description = """
+        API backend cho ứng dụng Food Review Làng Đại học (ĐHQG TP.HCM).
+
+        Tài khoản kiểm thử:
+        - Admin: admin@langdaihoc.vn / Admin@123
+        - Sinh viên: sinhvien@uit.edu.vn / Student@123
+        - Sinh viên: thuytien@hcmus.edu.vn / Student@123
+        """
     });
+
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -99,20 +108,18 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// 6. Database auto-initialization via schema.sql and Dapper Seeding
 using (var scope = app.Services.CreateScope())
 {
     var factory = scope.ServiceProvider.GetRequiredService<IDbConnectionFactory>();
     await DbInitializer.InitializeAsync(factory, app.Environment);
 }
 
-// 7. Configure HTTP Pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Food Review API (Dapper) v1");
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Food Review API v1");
         c.RoutePrefix = "swagger";
     });
 }

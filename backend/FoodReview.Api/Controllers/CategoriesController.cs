@@ -16,6 +16,9 @@ public class CategoriesController : ControllerBase
         _service = service;
     }
 
+    /// <summary>
+    /// Lấy danh sách tất cả danh mục ẩm thực kèm số lượng quán ăn tương ứng
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<CategoryDto>>>> GetAll()
     {
@@ -23,6 +26,9 @@ public class CategoriesController : ControllerBase
         return Ok(new ApiResponse<List<CategoryDto>>(true, "Lấy danh sách danh mục thành công.", categories));
     }
 
+    /// <summary>
+    /// [Admin] Thêm mới danh mục quán ăn (Cơm, Bún, Trà sữa,...)
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<ActionResult<ApiResponse<CategoryDto>>> Create([FromBody] CreateCategoryRequest request)

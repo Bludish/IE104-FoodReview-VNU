@@ -18,6 +18,9 @@ public class FavoritesController : ControllerBase
         _interactionService = interactionService;
     }
 
+    /// <summary>
+    /// Lấy danh sách các quán ăn mà người dùng hiện tại đã lưu yêu thích (Bookmark)
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<PlaceSummaryDto>>>> GetMyFavorites()
     {

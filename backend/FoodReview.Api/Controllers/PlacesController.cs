@@ -19,6 +19,9 @@ public class PlacesController : ControllerBase
         _interactionService = interactionService;
     }
 
+    /// <summary>
+    /// Tìm kiếm và lọc danh sách quán ăn theo từ khóa, khu vực, danh mục, giá tiền, rating, sắp xếp và phân trang
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<PagedResult<PlaceSummaryDto>>>> GetPlaces([FromQuery] PlaceFilterParams filter)
     {
@@ -26,6 +29,9 @@ public class PlacesController : ControllerBase
         return Ok(new ApiResponse<PagedResult<PlaceSummaryDto>>(true, "Lấy danh sách địa điểm thành công.", result));
     }
 
+    /// <summary>
+    /// Xem chi tiết quán ăn theo ID (kèm menu, danh sách review, trạng thái yêu thích)
+    /// </summary>
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ApiResponse<PlaceDetailDto>>> GetById(int id)
     {
@@ -42,6 +48,9 @@ public class PlacesController : ControllerBase
         return Ok(new ApiResponse<PlaceDetailDto>(true, "Lấy chi tiết địa điểm thành công.", place));
     }
 
+    /// <summary>
+    /// Xem chi tiết quán ăn theo URL Slug (ví dụ: com-tam-cay-bang)
+    /// </summary>
     [HttpGet("slug/{slug}")]
     public async Task<ActionResult<ApiResponse<PlaceDetailDto>>> GetBySlug(string slug)
     {
@@ -58,6 +67,9 @@ public class PlacesController : ControllerBase
         return Ok(new ApiResponse<PlaceDetailDto>(true, "Lấy chi tiết địa điểm thành công.", place));
     }
 
+    /// <summary>
+    /// [Admin] Tạo mới địa điểm quán ăn kèm danh sách món ăn ban đầu
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<ActionResult<ApiResponse<PlaceDetailDto>>> Create([FromBody] CreatePlaceRequest request)
@@ -66,6 +78,9 @@ public class PlacesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = place.Id }, new ApiResponse<PlaceDetailDto>(true, "Tạo địa điểm thành công.", place));
     }
 
+    /// <summary>
+    /// [Admin] Cập nhật thông tin quán ăn và danh sách thực đơn
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<ApiResponse<PlaceDetailDto>>> Update(int id, [FromBody] UpdatePlaceRequest request)
@@ -81,6 +96,9 @@ public class PlacesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// [Admin] Xóa mềm quán ăn (Chuyển trạng thái sang Hidden)
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpDelete("{id:int}")]
     public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)

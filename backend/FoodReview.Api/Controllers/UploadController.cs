@@ -17,6 +17,9 @@ public class UploadController : ControllerBase
         _fileService = fileService;
     }
 
+    /// <summary>
+    /// Tải tệp ảnh lên máy chủ (hỗ trợ JPG, PNG, WEBP, tối đa 5MB)
+    /// </summary>
     [HttpPost]
     public async Task<ActionResult<ApiResponse<object>>> UploadFile(IFormFile file, [FromQuery] string folder = "images")
     {

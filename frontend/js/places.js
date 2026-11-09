@@ -11,9 +11,26 @@ const Places = (() => {
     currentId: null,
   };
 
+  // Backend PostgreSQL lưu tên icon (utensils, soup, ...), frontend ánh xạ sang emoji.
+  const CATEGORY_ICONS = {
+    utensils: '🍚',
+    soup: '🍜',
+    flame: '🍢',
+    coffee: '🧋',
+    pot: '🍲',
+    leaf: '🥗',
+  };
+
   function iconFor(categoryId) {
     const category = state.categories.find((item) => item.id === Number(categoryId));
-    return category && category.icon ? category.icon : '🍽️';
+    const raw = String(category?.icon || '').trim();
+    if (!raw) return '🍽️';
+
+    const mapped = CATEGORY_ICONS[raw.toLowerCase()];
+    if (mapped) return mapped;
+
+    // Tương thích ngược: nếu icon đã là emoji thì giữ nguyên.
+    return /[^\u0000-\u007F]/.test(raw) ? raw : '🍽️';
   }
 
   function fillSelect(selector, placeholder, items) {
@@ -145,7 +162,7 @@ const Places = (() => {
         <p>${Utils.escapeHtml(error.message)}</p>
         <button class="btn btn-primary" type="button" id="emptyReset">Thử lại</button>`);
       renderPagination(null);
-      Utils.setApiStatus(false);
+      Utils.setApiStatus(Boolean(error.status));
       Utils.toast(error.message, 'error', 5000);
     }
   }

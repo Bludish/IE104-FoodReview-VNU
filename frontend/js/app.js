@@ -422,7 +422,9 @@
       Utils.setApiStatus(true);
       await Places.load(1);
     } catch (error) {
-      Utils.setApiStatus(false);
+      // Không có error.status nghĩa là lỗi kết nối; lỗi HTTP (4xx/5xx) thì
+      // API vẫn đang chạy, chỉ là yêu cầu thất bại.
+      Utils.setApiStatus(Boolean(error.status));
       Utils.toast(error.message, 'error', 6000);
       Places.load(1);
     }

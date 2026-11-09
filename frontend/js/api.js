@@ -1,9 +1,79 @@
 /**
  * Lớp gọi API dùng chung.
- * Tự động gắn JWT, parse ApiResponse<T> và ném lỗi có message từ backend.
+ * Tự dò backend (Docker :5000 hoặc dotnet :5114), tự gắn JWT,
+ * parse ApiResponse<T> và ném lỗi có message từ backend.
  */
 const API = (() => {
-  const base = CONFIG.API_BASE_URL.replace(/\/$/, '');
+  const explicitBase = (CONFIG.API_BASE_URL || '').replace(/\/$/, '');
+  const PROBE_TIMEOUT_MS = 4500;
+  let activeBase = explicitBase || null;
+  let resolving = null;
+
+  function defaultBase() {
+    return explicitBase || buildCandidates()[0];
+  }
+
+  function buildCandidates() {
+    if (explicitBase) return [explicitBase];
+
+    const host = window.location.hostname || 'localhost';
+    const scheme = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const hosts = host === 'localhost' ? ['localhost'] : [host, 'localhost'];
+
+    const candidates = [];
+    hosts.forEach((candidateHost) => {
+      CONFIG.API_PORTS.forEach((port) => {
+        candidates.push(`${scheme}//${candidateHost}:${port}`);
+      });
+    });
+    return [...new Set(candidates)];
+  }
+
+  async function probe(base) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${base}/api/Areas`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function resolveBase() {
+    if (activeBase) return Promise.resolve(activeBase);
+    if (resolving) return resolving;
+
+    const task = (async () => {
+      const candidates = buildCandidates();
+      for (const candidate of candidates) {
+        if (await probe(candidate)) {
+          activeBase = candidate;
+          return activeBase;
+        }
+      }
+
+      // Không lưu cổng lỗi: lần gọi sau sẽ dò lại, nhờ vậy frontend tự
+      // phục hồi khi backend được khởi động sau khi trang đã mở.
+      throw new Error(
+        `Không kết nối được tới backend (đã thử ${candidates.join(', ')}). ` +
+        'Hãy chắc chắn Docker container hoặc dotnet run đang chạy.',
+      );
+    })();
+
+    resolving = task;
+    task.then(
+      () => { resolving = null; },
+      () => { resolving = null; },
+    );
+    return task;
+  }
 
   function getToken() {
     return localStorage.getItem(CONFIG.TOKEN_KEY);
@@ -11,6 +81,7 @@ const API = (() => {
 
   async function request(path, options = {}) {
     const { method = 'GET', body, auth = true } = options;
+    const base = await resolveBase();
     const headers = { Accept: 'application/json' };
 
     const token = getToken();
@@ -30,6 +101,8 @@ const API = (() => {
     try {
       response = await fetch(`${base}${path}`, { method, headers, body: payload });
     } catch (error) {
+      // Backend có thể vừa tắt/đổi cổng: xóa cache để lần sau dò lại.
+      if (activeBase === base) activeBase = null;
       throw new Error(`Không kết nối được tới API tại ${base}. Hãy chắc chắn backend đang chạy.`);
     }
 
@@ -75,5 +148,15 @@ const API = (() => {
     return request('/api/Areas', { auth: false });
   }
 
-  return { base, getToken, request, get, post, put, del, upload, ping };
+  return {
+    get base() { return activeBase || defaultBase(); },
+    getToken,
+    request,
+    get,
+    post,
+    put,
+    del,
+    upload,
+    ping,
+  };
 })();

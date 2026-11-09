@@ -84,16 +84,19 @@ Tài khoản thử nghiệm sẵn có:
 Thư mục `frontend/` chứa giao diện HTML + CSS + JavaScript thuần (không cần build) để thử toàn bộ API: đăng nhập, khám phá/lọc quán, chi tiết, yêu thích, đánh giá kèm upload ảnh và bảng quản trị.
 
 ```bash
-# Terminal 1 — backend
+# Cách A — chạy backend bằng Docker (PostgreSQL + API, cổng 5000)
+docker compose up --build
+
+# Cách B — chạy backend trực tiếp bằng .NET (cổng 5114, cần PostgreSQL)
 cd backend/FoodReview.Api
 dotnet run
 
-# Terminal 2 — static server cho frontend
+# Terminal khác — static server cho frontend
 cd frontend
 python -m http.server 5500
 ```
 
-Mở 👉 **`http://localhost:5500`**. Nếu backend chạy ở cổng khác, cập nhật `API_BASE_URL` trong `frontend/js/config.js`.
+Mở 👉 **`http://localhost:5500`**. Frontend tự dò backend giữa Docker (`http://localhost:5000`) và `dotnet run` (`http://localhost:5114`), nên không cần sửa cấu hình. Nếu backend chạy ở cổng khác, đặt `API_BASE_URL` trong `frontend/js/config.js` hoặc thêm cổng vào `API_PORTS`.
 
 Chi tiết cấu trúc và danh sách endpoint đã nối: [`frontend/README.md`](frontend/README.md).
 Lệnh dừng container:

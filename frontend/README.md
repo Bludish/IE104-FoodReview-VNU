@@ -11,9 +11,9 @@ frontend/
 ├── css/
 │   └── styles.css      # Toàn bộ style
 └── js/
-    ├── config.js       # Cấu hình API_BASE_URL
-    ├── utils.js        # Helper DOM, format, toast, modal, nhãn enum
-    ├── api.js          # Lớp gọi API, tự gắn JWT
+    ├── config.js       # Cấu hình API_BASE_URL và danh sách cổng tự dò
+    ├── utils.js        # Helper DOM, format, toast, modal, nhãn enum, ghép URL ảnh
+    ├── api.js          # Lớp gọi API, tự dò backend, tự gắn JWT
     ├── auth.js         # Đăng nhập / đăng ký / phiên làm việc
     ├── places.js       # Danh sách, bộ lọc, chi tiết địa điểm
     ├── reviews.js      # Đánh giá, upload ảnh, báo cáo vi phạm
@@ -25,12 +25,22 @@ frontend/
 
 ### 1. Khởi động backend
 
+**Cách khuyến nghị — Docker Compose** (PostgreSQL 16 + API):
+
+```bash
+docker compose up --build
+```
+
+API chạy tại `http://localhost:5000`, Swagger: `http://localhost:5000/swagger`.
+
+**Hoặc chạy trực tiếp bằng .NET** (cần PostgreSQL đang chạy):
+
 ```bash
 cd backend/FoodReview.Api
 dotnet run
 ```
 
-Backend mặc định chạy tại `http://localhost:5114` (xem `Properties/launchSettings.json`). Swagger: `http://localhost:5114/swagger`.
+Backend .NET mặc định chạy tại `http://localhost:5114` (xem `Properties/launchSettings.json`). Swagger: `http://localhost:5114/swagger`.
 
 ### 2. Chạy static server cho frontend
 
@@ -49,11 +59,14 @@ Hoặc dùng extension **Live Server** trong VS Code: chuột phải `frontend/i
 
 ### 3. Đổi cổng API
 
-Nếu backend chạy ở cổng khác, sửa `API_BASE_URL` trong `frontend/js/config.js`:
+Frontend tự dò backend: thử lần lượt `http://<host>:5000` (Docker) rồi `http://<host>:5114` (dotnet) qua `GET /api/Areas`, và dùng cổng phản hồi đầu tiên. Danh sách cổng nằm trong `API_PORTS`. Nếu mất kết nối, frontend không ghi nhớ cổng lỗi mà sẽ dò lại ở lần gọi kế tiếp, nên chỉ cần tải lại trang (hoặc bấm “Thử lại”) sau khi backend khởi động xong.
+
+Nếu backend chạy ở cổng khác, đặt cứng `API_BASE_URL` trong `frontend/js/config.js`:
 
 ```js
 const CONFIG = {
-  API_BASE_URL: 'http://localhost:5114',
+  API_BASE_URL: 'http://localhost:5000',
+  API_PORTS: ['5000', '5114'],
   // ...
 };
 ```
@@ -92,6 +105,8 @@ Trong modal đăng nhập có nút điền nhanh tài khoản mẫu.
 
 ## Ghi chú
 
+- Backend tự dò cổng khi khởi động frontend; không cần sửa `config.js` nếu dùng Docker (`:5000`) hoặc `dotnet run` (`:5114`).
 - Enum từ backend trả về dạng **số** (`0`, `1`, `2`...), frontend ánh xạ sang nhãn tiếng Việt trong `js/utils.js`.
+- Danh mục trong PostgreSQL lưu `Icon` dạng tên (`utensils`, `soup`, `flame`, `coffee`, `pot`, `leaf`); frontend ánh xạ sang emoji trong `js/places.js`.
 - Đây là frontend thử nghiệm API, chưa tối ưu cho production (không có router, state management hay bundler).
-- File upload được lưu vào `backend/FoodReview.Api/wwwroot/uploads/` và phục vụ qua static files của backend.
+- File upload được lưu vào `wwwroot/uploads/` của backend (Docker dùng volume `api_uploads`) và phục vụ qua static files; frontend ghép URL tương đối với địa chỉ API đã dò.

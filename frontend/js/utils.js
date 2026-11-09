@@ -57,7 +57,7 @@ const Utils = (() => {
   function imageUrl(url) {
     if (!url) return '';
     if (/^(https?:|data:|blob:)/i.test(url)) return url;
-    const base = CONFIG.API_BASE_URL.replace(/\/$/, '');
+    const base = (typeof API !== 'undefined' ? API.base : CONFIG.API_BASE_URL).replace(/\/$/, '');
     return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
   }
 

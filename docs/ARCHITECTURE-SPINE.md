@@ -196,3 +196,20 @@ erDiagram
 | `PUT` | `/api/admin/reports/{id}/resolve`| `ADMIN` | Xử lý báo cáo (ẩn review, bỏ qua báo cáo) |
 | `GET` | `/api/admin/users` | `ADMIN` | Quản lý danh sách sinh viên, khóa/mở khóa tài khoản |
 
+---
+
+### 5. Mô hình Triển khai Container hóa (Docker & PostgreSQL)
+
+Hệ thống được đóng gói thành 2 container độc lập thông qua Docker Compose:
+
+1. **`foodreview-postgres` (PostgreSQL 16 Alpine):**
+   - Lưu trữ toàn bộ dữ liệu quan hệ, tự động nạp `schema.sql` trong lần khởi chạy đầu tiên qua volume `docker-entrypoint-initdb.d`.
+   - Cổng nội bộ: `5432`, volume bền vững: `postgres_data`.
+   - Cơ chế kiểm tra sức khỏe (Healthcheck): `pg_isready -U foodreview_user -d foodreview` với chu kỳ 5 giây.
+
+2. **`foodreview-api` (.NET 9 Web API):**
+   - Đóng gói theo mô hình Multi-stage Dockerfile (build với .NET 9 SDK, chạy trên runtime `aspnet:9.0` tối ưu hóa kích thước).
+   - Phụ thuộc trạng thái khỏe mạnh của PostgreSQL (`depends_on: postgres: condition: service_healthy`).
+   - Cổng phục vụ: `5000:8080`, mount volume lưu trữ hình ảnh tải lên tại `api_uploads:/app/wwwroot/uploads`.
+
+

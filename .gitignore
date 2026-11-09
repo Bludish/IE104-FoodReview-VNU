@@ -34,3 +34,10 @@ tmp/
 temp_bmad/
 Goi_Thu_Thap_Du_Lieu_FoodReview/
 Goi_Thu_Thap_Du_Lieu_FoodReview.zip
+
+## ML Book & Cache files
+.book_cache/
+distilled_ml_systems/
+distilled_ml_systems_en/
+Designing_Machine_Learning_Systems*
+ABUIABA9GAAghIK0ugYowM2h3QY.pdf

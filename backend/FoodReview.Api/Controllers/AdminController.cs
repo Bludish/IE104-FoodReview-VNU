@@ -19,6 +19,9 @@ public class AdminController : ControllerBase
         _adminService = adminService;
     }
 
+    /// <summary>
+    /// [Admin] Xem danh sách các báo cáo vi phạm bài review từ sinh viên
+    /// </summary>
     [HttpGet("reports")]
     public async Task<ActionResult<ApiResponse<List<ReportDto>>>> GetReports([FromQuery] ReportStatus? status = null)
     {
@@ -26,6 +29,9 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<List<ReportDto>>(true, "Lấy danh sách báo cáo thành công.", reports));
     }
 
+    /// <summary>
+    /// [Admin] Xử lý báo cáo vi phạm (Duyệt/Bỏ qua, tùy chọn ẩn bài review bị báo cáo)
+    /// </summary>
     [HttpPut("reports/{id:int}/resolve")]
     public async Task<ActionResult<ApiResponse<bool>>> ResolveReport(int id, [FromBody] ResolveReportRequest request)
     {
@@ -44,6 +50,9 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<bool>(true, "Đã xử lý báo cáo thành công.", true));
     }
 
+    /// <summary>
+    /// [Admin] Xem danh sách tất cả người dùng trong hệ thống
+    /// </summary>
     [HttpGet("users")]
     public async Task<ActionResult<ApiResponse<List<UserProfileDto>>>> GetUsers()
     {
@@ -51,6 +60,9 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<List<UserProfileDto>>(true, "Lấy danh sách người dùng thành công.", users));
     }
 
+    /// <summary>
+    /// [Admin] Khóa hoặc mở khóa tài khoản người dùng vi phạm
+    /// </summary>
     [HttpPut("users/{id:int}/toggle-ban")]
     public async Task<ActionResult<ApiResponse<bool>>> ToggleBanUser(int id)
     {
@@ -63,6 +75,9 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<bool>(true, "Đã thay đổi trạng thái tài khoản thành công.", true));
     }
 
+    /// <summary>
+    /// [Admin] Quản lý toàn bộ quán ăn (bao gồm cả quán Nháp, Đã đăng, và Đã ẩn)
+    /// </summary>
     [HttpGet("places")]
     public async Task<ActionResult<ApiResponse<List<PlaceSummaryDto>>>> GetAllPlaces()
     {
@@ -70,6 +85,9 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<List<PlaceSummaryDto>>(true, "Lấy danh sách quản lý địa điểm thành công.", places));
     }
 
+    /// <summary>
+    /// [Admin] Cập nhật trạng thái hiển thị của bài review (Pending, Published, Hidden)
+    /// </summary>
     [HttpPut("reviews/{id:int}/visibility")]
     public async Task<ActionResult<ApiResponse<bool>>> ToggleReviewVisibility(int id, [FromBody] ReviewStatus newStatus)
     {

@@ -104,8 +104,8 @@ public class InteractionService : IInteractionService
 
         var insertSql = @"
             INSERT INTO Reports (ReporterId, ReviewId, Reason, Description, Status)
-            VALUES (@ReporterId, @ReviewId, @Reason, @Description, 0);
-            SELECT last_insert_rowid();";
+            VALUES (@ReporterId, @ReviewId, @Reason, @Description, 0)
+            RETURNING Id;";
 
         var reportId = await conn.ExecuteScalarAsync<int>(insertSql, new
         {

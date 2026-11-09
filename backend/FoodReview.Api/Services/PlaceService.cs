@@ -25,11 +25,11 @@ public class PlaceService : IPlaceService
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            whereClauses.Add(@"(LOWER(p.Name) LIKE @Search 
-                               OR LOWER(p.Description) LIKE @Search 
-                               OR LOWER(p.Address) LIKE @Search 
-                               OR EXISTS (SELECT 1 FROM MenuItems m WHERE m.PlaceId = p.Id AND LOWER(m.Name) LIKE @Search))");
-            parameters.Add("Search", $"%{filter.Search.Trim().ToLower()}%");
+            whereClauses.Add(@"(p.Name ILIKE @Search 
+                               OR p.Description ILIKE @Search 
+                               OR p.Address ILIKE @Search 
+                               OR EXISTS (SELECT 1 FROM MenuItems m WHERE m.PlaceId = p.Id AND m.Name ILIKE @Search))");
+            parameters.Add("Search", $"%{filter.Search.Trim()}%");
         }
 
         if (filter.AreaId.HasValue && filter.AreaId.Value > 0)
@@ -81,7 +81,7 @@ public class PlaceService : IPlaceService
                 p.AreaId, a.Name AS AreaName,
                 p.CategoryId, c.Name AS CategoryName,
                 p.PriceMin, p.PriceMax, p.OpeningHours, p.CoverImageUrl,
-                CAST(COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0) AS REAL) AS AverageRating,
+                COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0)::DOUBLE PRECISION AS AverageRating,
                 COUNT(CASE WHEN r.Status = 1 THEN 1 END) AS ReviewCount,
                 p.Status
             FROM Places p
@@ -89,8 +89,8 @@ public class PlaceService : IPlaceService
             JOIN Categories c ON p.CategoryId = c.Id
             LEFT JOIN Reviews r ON r.PlaceId = p.Id
             WHERE {whereSql}
-            GROUP BY p.Id
-            HAVING (@MinRating IS NULL OR AverageRating >= @MinRating)
+            GROUP BY p.Id, a.Name, c.Name
+            HAVING (@MinRating IS NULL OR COALESCE(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 0.0) >= @MinRating)
             ORDER BY {orderBySql}
             LIMIT @PageSize OFFSET @Offset";
 
@@ -114,7 +114,7 @@ public class PlaceService : IPlaceService
                 p.AreaId, a.Name AS AreaName,
                 p.CategoryId, c.Name AS CategoryName,
                 p.PriceMin, p.PriceMax, p.OpeningHours, p.Latitude, p.Longitude, p.CoverImageUrl,
-                CAST(COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0) AS REAL) AS AverageRating,
+                COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0)::DOUBLE PRECISION AS AverageRating,
                 COUNT(CASE WHEN r.Status = 1 THEN 1 END) AS ReviewCount,
                 p.Status, p.CreatedAt, p.UpdatedAt
             FROM Places p
@@ -122,7 +122,7 @@ public class PlaceService : IPlaceService
             JOIN Categories c ON p.CategoryId = c.Id
             LEFT JOIN Reviews r ON r.PlaceId = p.Id
             WHERE p.Id = @Id
-            GROUP BY p.Id";
+            GROUP BY p.Id, a.Name, c.Name";
 
         var place = await conn.QueryFirstOrDefaultAsync<dynamic>(placeSql, new { Id = id });
         if (place == null) return null;
@@ -193,8 +193,8 @@ public class PlaceService : IPlaceService
 
         var insertSql = @"
             INSERT INTO Places (Name, Slug, Description, Address, AreaId, CategoryId, PriceMin, PriceMax, OpeningHours, Latitude, Longitude, CoverImageUrl, Status)
-            VALUES (@Name, @Slug, @Description, @Address, @AreaId, @CategoryId, @PriceMin, @PriceMax, @OpeningHours, @Latitude, @Longitude, @CoverImageUrl, 1);
-            SELECT last_insert_rowid();";
+            VALUES (@Name, @Slug, @Description, @Address, @AreaId, @CategoryId, @PriceMin, @PriceMax, @OpeningHours, @Latitude, @Longitude, @CoverImageUrl, 1)
+            RETURNING Id;";
 
         var placeId = await conn.ExecuteScalarAsync<int>(insertSql, new
         {
@@ -248,7 +248,7 @@ public class PlaceService : IPlaceService
                 Longitude = @Longitude,
                 CoverImageUrl = COALESCE(@CoverImageUrl, CoverImageUrl),
                 Status = @Status,
-                UpdatedAt = datetime('now')
+                UpdatedAt = CURRENT_TIMESTAMP
             WHERE Id = @Id";
 
         var rows = await conn.ExecuteAsync(updateSql, new
@@ -295,7 +295,7 @@ public class PlaceService : IPlaceService
     public async Task<bool> DeletePlaceAsync(int id)
     {
         using var conn = _dbFactory.CreateConnection();
-        var rows = await conn.ExecuteAsync("UPDATE Places SET Status = 2, UpdatedAt = datetime('now') WHERE Id = @Id", new { Id = id });
+        var rows = await conn.ExecuteAsync("UPDATE Places SET Status = 2, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = @Id", new { Id = id });
         return rows > 0;
     }
 

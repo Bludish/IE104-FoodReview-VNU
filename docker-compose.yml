@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: foodreview-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: foodreview
+      POSTGRES_USER: foodreview_user
+      POSTGRES_PASSWORD: foodreview_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docs/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodreview_user -d foodreview"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: foodreview-api
+    container_name: foodreview-api
+    build:
+      context: .
+      dockerfile: backend/FoodReview.Api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=foodreview;Username=foodreview_user;Password=foodreview_password
+      - Jwt__Key=FoodReviewLangDaiHocSuperSecretKeyForDevelopment2026!@#$%^
+      - Jwt__Issuer=FoodReviewApi
+      - Jwt__Audience=FoodReviewClient
+      - Jwt__ExpiresInDays=7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - api_uploads:/app/wwwroot/uploads
+
+volumes:
+  postgres_data:
+    driver: local
+  api_uploads:
+    driver: local

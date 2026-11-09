@@ -17,6 +17,9 @@ public class AuthController : ControllerBase
         _authService = authService;
     }
 
+    /// <summary>
+    /// Đăng ký tài khoản sinh viên mới
+    /// </summary>
     [HttpPost("register")]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] RegisterRequest request)
     {
@@ -31,6 +34,9 @@ public class AuthController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Đăng nhập tài khoản bằng Email và Mật khẩu (Nhận JWT Bearer Token)
+    /// </summary>
     [HttpPost("login")]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Login([FromBody] LoginRequest request)
     {
@@ -45,6 +51,9 @@ public class AuthController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Lấy thông tin cá nhân và số lượng review/yêu thích của người dùng hiện tại
+    /// </summary>
     [Authorize]
     [HttpGet("me")]
     public async Task<ActionResult<ApiResponse<UserProfileDto>>> GetProfile()

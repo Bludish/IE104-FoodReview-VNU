@@ -8,7 +8,8 @@
 - **Platform & Runtime:** .NET 9 SDK (C# 13)
 - **Framework:** ASP.NET Core Web API
 - **Data Access Layer:** **Dapper Micro-ORM** (High-Performance Raw SQL & Multi-Mapping)
-- **Database Engine:** SQLite (`FoodReview.db`), khởi tạo chuẩn từ `docs/schema.sql` (hỗ trợ chuyển đổi sang PostgreSQL / SQL Server dễ dàng).
+- **Database Engine:** PostgreSQL 16+ via Docker Compose, khởi tạo chuẩn từ `docs/schema.sql`.
+- **Containerization & DevOps:** Docker & Docker Compose (`docker-compose.yml` gồm service `postgres` và service `api`).
 - **Authentication & Security:** JWT (JSON Web Token), BCrypt / PBKDF2 Password Hashing, RBAC (Role-Based Access Control).
 - **API Documentation:** Swagger / OpenAPI UI (`/swagger`).
 - **File Storage:** Local File Server (Static Files `/uploads/...`) phục vụ upload ảnh quán và ảnh review.

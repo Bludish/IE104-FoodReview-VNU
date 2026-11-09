@@ -66,7 +66,7 @@ public class AdminService : IAdminService
             UPDATE Reports
             SET Status = @Status,
                 HandledBy = @AdminId,
-                HandledAt = datetime('now')
+                HandledAt = CURRENT_TIMESTAMP
             WHERE Id = @Id";
 
         var rows = await conn.ExecuteAsync(updateSql, new
@@ -82,7 +82,7 @@ public class AdminService : IAdminService
         {
             await conn.ExecuteAsync(@"
                 UPDATE Reviews 
-                SET Status = 2, UpdatedAt = datetime('now') 
+                SET Status = 2, UpdatedAt = CURRENT_TIMESTAMP 
                 WHERE Id = (SELECT ReviewId FROM Reports WHERE Id = @Id)",
                 new { Id = reportId });
         }
@@ -146,14 +146,14 @@ public class AdminService : IAdminService
                 p.AreaId, a.Name AS AreaName,
                 p.CategoryId, c.Name AS CategoryName,
                 p.PriceMin, p.PriceMax, p.OpeningHours, p.CoverImageUrl,
-                CAST(COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0) AS REAL) AS AverageRating,
+                COALESCE(ROUND(AVG(CASE WHEN r.Status = 1 THEN r.Rating END), 1), 0.0)::DOUBLE PRECISION AS AverageRating,
                 COUNT(CASE WHEN r.Status = 1 THEN 1 END) AS ReviewCount,
                 p.Status
             FROM Places p
             JOIN Areas a ON p.AreaId = a.Id
             JOIN Categories c ON p.CategoryId = c.Id
             LEFT JOIN Reviews r ON r.PlaceId = p.Id
-            GROUP BY p.Id
+            GROUP BY p.Id, a.Name, c.Name
             ORDER BY p.UpdatedAt DESC";
 
         var list = await conn.QueryAsync<PlaceSummaryDto>(sql);
@@ -165,7 +165,7 @@ public class AdminService : IAdminService
         using var conn = _dbFactory.CreateConnection();
 
         var rows = await conn.ExecuteAsync(
-            "UPDATE Reviews SET Status = @Status, UpdatedAt = datetime('now') WHERE Id = @Id",
+            "UPDATE Reviews SET Status = @Status, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = @Id",
             new { Id = reviewId, Status = (int)newStatus });
 
         return rows > 0;

@@ -36,8 +36,8 @@ public class CategoryAreaService : ICategoryAreaService
 
         var insertSql = @"
             INSERT INTO Areas (Name, Description, ParentAreaId)
-            VALUES (@Name, @Description, @ParentAreaId);
-            SELECT last_insert_rowid();";
+            VALUES (@Name, @Description, @ParentAreaId)
+            RETURNING Id;";
 
         var id = await conn.ExecuteScalarAsync<int>(insertSql, new
         {
@@ -71,8 +71,8 @@ public class CategoryAreaService : ICategoryAreaService
 
         var insertSql = @"
             INSERT INTO Categories (Name, Slug, Icon)
-            VALUES (@Name, @Slug, @Icon);
-            SELECT last_insert_rowid();";
+            VALUES (@Name, @Slug, @Icon)
+            RETURNING Id;";
 
         var id = await conn.ExecuteScalarAsync<int>(insertSql, new
         {

@@ -40,8 +40,8 @@ public class ReviewService : IReviewService
 
         var insertSql = @"
             INSERT INTO Reviews (PlaceId, UserId, Rating, Content, Status)
-            VALUES (@PlaceId, @UserId, @Rating, @Content, 1);
-            SELECT last_insert_rowid();";
+            VALUES (@PlaceId, @UserId, @Rating, @Content, 1)
+            RETURNING Id;";
 
         var reviewId = await conn.ExecuteScalarAsync<int>(insertSql, new
         {
@@ -56,8 +56,8 @@ public class ReviewService : IReviewService
         {
             var insertImgSql = @"
                 INSERT INTO ReviewImages (ReviewId, ImageUrl)
-                VALUES (@ReviewId, @ImageUrl);
-                SELECT last_insert_rowid();";
+                VALUES (@ReviewId, @ImageUrl)
+                RETURNING Id;";
 
             foreach (var url in request.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
             {
@@ -107,7 +107,7 @@ public class ReviewService : IReviewService
             UPDATE Reviews
             SET Rating = @Rating,
                 Content = @Content,
-                UpdatedAt = datetime('now')
+                UpdatedAt = CURRENT_TIMESTAMP
             WHERE Id = @Id";
 
         await conn.ExecuteAsync(updateSql, new

@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
 namespace FoodReview.Api.Models;
@@ -28,10 +27,8 @@ public class Place
     public int CategoryId { get; set; }
     public Category? Category { get; set; }
 
-    [Column(TypeName = "decimal(18, 2)")]
     public decimal PriceMin { get; set; }
 
-    [Column(TypeName = "decimal(18, 2)")]
     public decimal PriceMax { get; set; }
 
     [MaxLength(100)]
@@ -54,12 +51,10 @@ public class Place
     public ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
 
     // Computed / Helper helpers
-    [NotMapped]
     public double AverageRating => Reviews.Any(r => r.Status == ReviewStatus.Published)
         ? Math.Round(Reviews.Where(r => r.Status == ReviewStatus.Published).Average(r => r.Rating), 1)
         : 0;
 
-    [NotMapped]
     public int ReviewCount => Reviews.Count(r => r.Status == ReviewStatus.Published);
 }
 
